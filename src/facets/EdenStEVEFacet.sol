@@ -6,10 +6,11 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEdenStEVEFacet } from "src/interfaces/IEdenStEVEFacet.sol";
+import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibStEVEStorage } from "src/libraries/LibStEVEStorage.sol";
 
-contract EdenStEVEFacet is IEdenStEVEFacet {
+contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
     using SafeERC20 for IERC20;
 
     error Unauthorized();
@@ -33,7 +34,7 @@ contract EdenStEVEFacet is IEdenStEVEFacet {
         _;
     }
 
-    function claimRewards() external returns (uint256 totalClaimed) {
+    function claimRewards() external nonReentrant returns (uint256 totalClaimed) {
         LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
         uint256 current = currentEpoch();
         if (current == 0 || st.totalEpochs == 0) return 0;
@@ -64,6 +65,37 @@ contract EdenStEVEFacet is IEdenStEVEFacet {
         }
 
         emit RewardsClaimed(msg.sender, startEpoch, endEpoch, totalClaimed);
+    }
+
+    function configureRewards(
+        uint256 genesisTimestamp,
+        uint256 epochDuration,
+        uint256 halvingInterval,
+        uint256 maxPeriods,
+        uint256 baseRewardPerEpoch,
+        uint256 totalEpochs,
+        uint256 maxRewardPerEpochOverride
+    ) external onlyOwnerOrTimelock {
+        if (
+            epochDuration == 0 || halvingInterval == 0 || maxPeriods == 0 || baseRewardPerEpoch == 0
+                || totalEpochs == 0 || maxRewardPerEpochOverride == 0
+                || maxRewardPerEpochOverride > baseRewardPerEpoch
+        ) {
+            revert InvalidRewardConfig();
+        }
+
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        st.genesisTimestamp = genesisTimestamp;
+        st.epochDuration = epochDuration;
+        st.halvingInterval = halvingInterval;
+        st.maxPeriods = maxPeriods;
+        st.baseRewardPerEpoch = baseRewardPerEpoch;
+        st.totalEpochs = totalEpochs;
+        st.maxRewardPerEpochOverride = maxRewardPerEpochOverride;
+
+        if (st.rewardPerEpochOverride > maxRewardPerEpochOverride) {
+            st.rewardPerEpochOverride = maxRewardPerEpochOverride;
+        }
     }
 
     function fundRewards(

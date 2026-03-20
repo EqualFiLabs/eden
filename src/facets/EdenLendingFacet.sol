@@ -18,7 +18,6 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
 
     error UnknownBasket(uint256 basketId);
     error BasketPaused(uint256 basketId);
-    error Reentrancy();
     error InvalidArrayLength();
     error InvalidDuration(uint256 provided, uint256 minDuration, uint256 maxDuration);
     error InvalidTierConfiguration();
@@ -34,14 +33,6 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
     error LoanExpired(uint256 loanId, uint40 maturity);
     error LoanNotExpired(uint256 loanId, uint40 maturity);
     error BelowMinimumTier(uint256 basketId, uint256 collateralUnits);
-
-    modifier nonReentrant() {
-        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
-        if (store.reentrancyStatus == LibEdenStorage.REENTRANCY_ENTERED) revert Reentrancy();
-        store.reentrancyStatus = LibEdenStorage.REENTRANCY_ENTERED;
-        _;
-        store.reentrancyStatus = LibEdenStorage.REENTRANCY_NOT_ENTERED;
-    }
 
     modifier basketExists(
         uint256 basketId

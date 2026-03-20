@@ -7,6 +7,7 @@ import { Test } from "forge-std/Test.sol";
 import { EdenDiamond } from "src/EdenDiamond.sol";
 import { EdenCoreFacet } from "src/facets/EdenCoreFacet.sol";
 import { EdenFlashFacet } from "src/facets/EdenFlashFacet.sol";
+import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { IDiamondCut } from "src/interfaces/IDiamondCut.sol";
 import { IEdenFlashFacet } from "src/interfaces/IEdenFlashFacet.sol";
 import { IEdenFlashReceiver } from "src/interfaces/IEdenFlashReceiver.sol";
@@ -284,7 +285,7 @@ contract FlashFacetTest is Test {
     function test_FlashLoan_ReentrantCallbackReverts() public {
         receiver.setMode(2, 1, UNIT);
 
-        vm.expectRevert(EdenCoreFacet.Reentrancy.selector);
+        vm.expectRevert(EdenReentrancyGuard.Reentrancy.selector);
         IEdenFlashFacet(address(diamond)).flashLoan(1, UNIT, address(receiver), "");
     }
 

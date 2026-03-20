@@ -5,12 +5,13 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEdenCoreFacet } from "src/interfaces/IEdenCoreFacet.sol";
+import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { StEVEToken } from "src/tokens/StEVEToken.sol";
 
-contract EdenCoreFacet is IEdenCoreFacet {
+contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
     using SafeERC20 for IERC20;
 
     uint256 internal constant BASIS_POINTS = 10_000;
@@ -38,8 +39,6 @@ contract EdenCoreFacet is IEdenCoreFacet {
     error FeeCapExceeded();
     error UnexpectedMsgValue(uint256 expected, uint256 actual);
     error InsufficientVaultBalance(address asset, uint256 expected, uint256 actual);
-    error Reentrancy();
-
     struct MintQuote {
         address[] assets;
         uint256[] baseDeposits;
@@ -55,14 +54,6 @@ contract EdenCoreFacet is IEdenCoreFacet {
         uint256[] payoutAmounts;
         uint256[] potShares;
         uint256[] feeAmounts;
-    }
-
-    modifier nonReentrant() {
-        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
-        if (store.reentrancyStatus == LibEdenStorage.REENTRANCY_ENTERED) revert Reentrancy();
-        store.reentrancyStatus = LibEdenStorage.REENTRANCY_ENTERED;
-        _;
-        store.reentrancyStatus = LibEdenStorage.REENTRANCY_NOT_ENTERED;
     }
 
     modifier basketExists(

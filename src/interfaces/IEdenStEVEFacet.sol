@@ -5,6 +5,15 @@ import { IEdenEvents } from "./IEdenEvents.sol";
 
 interface IEdenStEVEFacet is IEdenEvents {
     function claimRewards() external returns (uint256 totalClaimed);
+    function configureRewards(
+        uint256 genesisTimestamp,
+        uint256 epochDuration,
+        uint256 halvingInterval,
+        uint256 maxPeriods,
+        uint256 baseRewardPerEpoch,
+        uint256 totalEpochs,
+        uint256 maxRewardPerEpochOverride
+    ) external;
     function fundRewards(
         uint256 amount
     ) external;
