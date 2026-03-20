@@ -174,6 +174,7 @@ contract EdenCoreFacet is IEdenCoreFacet {
     )
         external
         view
+        virtual
         basketExists(basketId)
         returns (address[] memory assets, uint256[] memory required, uint256[] memory feeAmounts)
     {
@@ -187,6 +188,7 @@ contract EdenCoreFacet is IEdenCoreFacet {
     )
         external
         view
+        virtual
         basketExists(basketId)
         returns (address[] memory assets, uint256[] memory returned, uint256[] memory feeAmounts)
     {
