@@ -6,6 +6,16 @@ library LibEdenStorage {
     uint256 internal constant REENTRANCY_NOT_ENTERED = 1;
     uint256 internal constant REENTRANCY_ENTERED = 2;
 
+    struct FacetAddressAndPosition {
+        address facetAddress;
+        uint96 functionSelectorPosition;
+    }
+
+    struct FacetFunctionSelectors {
+        bytes4[] functionSelectors;
+        uint256 facetAddressPosition;
+    }
+
     struct Basket {
         address[] assets;
         uint256[] bundleAmounts;
@@ -30,6 +40,9 @@ library LibEdenStorage {
         mapping(uint256 => Basket) baskets;
         mapping(uint256 => mapping(address => uint256)) vaultBalances;
         mapping(uint256 => mapping(address => uint256)) feePots;
+        mapping(bytes4 => FacetAddressAndPosition) selectorToFacetAndPosition;
+        mapping(address => FacetFunctionSelectors) facetFunctionSelectors;
+        address[] facetAddresses;
         mapping(address => bool) frozenFacets;
         uint256 reentrancyStatus;
     }
