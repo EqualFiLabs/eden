@@ -1,0 +1,19 @@
+# Foundry build artifacts
+.vscode/
+/equalindex/
+/cache/
+/out/
+/broadcast/
+/coverage/
+/lcov.info
+/.forge-snapshots/
+
+# Environment files
+/.env
+/.env.*
+
+# Editor / OS noise
+/.DS_Store
+/.idea/
+*.swp
+*.swo
