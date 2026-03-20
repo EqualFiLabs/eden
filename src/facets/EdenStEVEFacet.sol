@@ -197,6 +197,32 @@ contract EdenStEVEFacet is IEdenStEVEFacet {
         _syncGlobalTwab(st.globalTwab.lastBalance - amount);
     }
 
+    function _moveCustodyLiquidToLocked(
+        address user,
+        address custodyHolder,
+        uint256 amount
+    ) internal {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        st.liquidBalances[custodyHolder] -= amount;
+        st.lockedBalances[user] += amount;
+        _syncAccountTwab(custodyHolder);
+        _syncAccountTwab(user);
+        _syncGlobalTwab(st.globalTwab.lastBalance);
+    }
+
+    function _moveLockedToCustodyLiquid(
+        address user,
+        address custodyHolder,
+        uint256 amount
+    ) internal {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        st.lockedBalances[user] -= amount;
+        st.liquidBalances[custodyHolder] += amount;
+        _syncAccountTwab(user);
+        _syncAccountTwab(custodyHolder);
+        _syncGlobalTwab(st.globalTwab.lastBalance);
+    }
+
     function _syncAccountTwab(
         address user
     ) internal {
