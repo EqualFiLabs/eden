@@ -25,13 +25,13 @@ contract DeployEden is Script {
     uint16 internal constant DEFAULT_FEE_POT_SHARE_BPS = 6000;
     uint16 internal constant DEFAULT_PROTOCOL_FEE_SPLIT_BPS = 7500;
     uint256 internal constant ST_EVE_BUNDLE = 1000e18;
-    uint256 internal constant BASE_REWARD_PER_EPOCH = 4_380_000e18;
+    uint256 internal constant BASE_REWARD_PER_EPOCH = 6_250_000e18;
     uint256 internal constant MAX_REWARD_OVERRIDE = BASE_REWARD_PER_EPOCH;
     uint256 internal constant HALVING_INTERVAL = 183;
     uint256 internal constant MAX_PERIODS = 3;
     uint256 internal constant TOTAL_EPOCHS = 548;
     uint256 internal constant EPOCH_DURATION = 1 days;
-    uint256 internal constant INITIAL_REWARD_RESERVE = 1_500_000_000e18;
+    uint256 internal constant INITIAL_REWARD_RESERVE = 2_000_000_000e18;
 
     struct Deployment {
         EdenDiamond diamond;

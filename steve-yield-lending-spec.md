@@ -37,9 +37,8 @@ The system includes a lending module: borrow against locked basket collateral at
 
 | Purpose | Amount | Notes |
 |---------|--------|-------|
-| Vault seed | 1,500,000,000 EVE | Initial vault backing at launch |
-| Reward reserve | 1,500,000,000 EVE | Decay curve over 548 epochs (§5.1.1) |
-| **Total** | **3,000,000,000 EVE** | 3% of max supply |
+| Reward reserve | 2,000,000,000 EVE | Funded from pre-existing EVE; no protocol-side mint or vault seed |
+| **Total** | **2,000,000,000 EVE** | 2% of max supply |
 
 ### stEVE (New)
 - ERC20 receipt token (ERC20 + ERC20Votes + ERC20Permit)
@@ -177,7 +176,7 @@ function _routeBasketFee(uint256 basketId, address asset, uint256 fee) internal 
 
 ### 5.1 Concept
 
-A reward reserve of **1,500,000,000 EVE** (1.5B) is distributed daily to stEVE holders over **548 epochs (1.5 years)** using a **halving decay curve**. Distribution is proportional to each holder's **time-weighted average balance** (TWAB) over each epoch.
+A reward reserve of **2,000,000,000 EVE** (2B) is distributed daily to stEVE holders over **548 epochs (1.5 years)** using a **halving decay curve**. Distribution is proportional to each holder's **time-weighted average balance** (TWAB) over each epoch.
 
 TWAB eliminates snapshot gaming — you must hold for the full epoch to receive full weight.
 
@@ -187,12 +186,9 @@ Emission rate halves every 183 epochs (~6 months). This front-loads rewards duri
 
 | Period | Epochs | Daily Emission | Period Total | Cumulative % |
 |--------|--------|---------------|-------------|-------------|
-| Months 1–6 | 1–183 | ~4,380,000 EVE | ~801.5M | 53.4% |
-| Months 7–12 | 184–365 | ~2,190,000 EVE | ~398.7M | 80.0% |
-| Months 13–18 | 366–548 | ~1,095,000 EVE | ~200.4M | 93.4% |
-| Residual | — | — | ~99.4M | 100% |
-
-Residual dust (~6.6%) is retained in the reserve. Owner can allocate it to a final epoch tranche or roll it into a future rewards cycle.
+| Months 1–6 | 1–183 | 6,250,000 EVE | 1,143.75M | 57.19% |
+| Months 7–12 | 184–365 | 3,125,000 EVE | 571.875M | 85.78% |
+| Months 13–18 | 366–548 | 1,562,500 EVE | 284.375M | 100.0% |
 
 **Implementation:** Each halving period stores a `rewardPerEpoch` value. On epoch transition, the contract checks which period applies:
 
@@ -201,7 +197,7 @@ function rewardForEpoch(uint256 epoch) public view returns (uint256) {
     if (epoch >= totalEpochs) return 0;  // totalEpochs = 548, last paying epoch = 547
     uint256 period = epoch / halvingInterval; // halvingInterval = 183
     if (period >= maxPeriods) return 0;       // maxPeriods = 3
-    return baseRewardPerEpoch >> period;      // baseRewardPerEpoch = 4_380_000e18
+    return baseRewardPerEpoch >> period;      // baseRewardPerEpoch = 6_250_000e18
 }
 ```
 
@@ -244,8 +240,8 @@ A global TWAB tracks total effective supply the same way.
 | `epochDuration` | 86400 (24h) | Owner/Timelock |
 | `halvingInterval` | 183 epochs (~6 months) | Fixed at deploy |
 | `maxPeriods` | 3 | Fixed at deploy |
-| `baseRewardPerEpoch` | 4,380,000 EVE | Fixed at deploy |
-| `rewardReserve` | 1,500,000,000 EVE | Funded by owner |
+| `baseRewardPerEpoch` | 6,250,000 EVE | Fixed at deploy |
+| `rewardReserve` | 2,000,000,000 EVE | Funded by owner from pre-existing EVE |
 | `totalEpochs` | 548 (~1.5 years) | Fixed at deploy |
 
 Epochs are sequential, starting from contract deployment. No gaps.
@@ -538,14 +534,13 @@ event FacetFrozen(address indexed facet);
 2. Cut in EdenCoreFacet, EdenAdminFacet, EdenViewFacet
 3. Set treasury address, protocol fee split (7500 bps)
 4. Create stEVE basket (basketId 0, special-cased) — deploys stEVE receipt token
-5. Seed stEVE vault (1.5B EVE)
-6. Cut in EdenStEVEFacet — TWAB + epoch rewards
-7. Fund reward reserve (1.5B EVE), decay curve activates from genesis epoch
-8. Cut in EdenLendingFacet
-9. Configure lending params + fee tiers for stEVE basket
-10. Cut in EdenFlashFacet
-11. Transfer Diamond ownership to multisig/timelock
-12. Open permissionless basket creation
+5. Cut in EdenStEVEFacet — TWAB + epoch rewards
+6. Fund reward reserve (2B EVE from existing supply), decay curve activates from genesis epoch
+7. Cut in EdenLendingFacet
+8. Configure lending params + fee tiers for stEVE basket
+9. Cut in EdenFlashFacet
+10. Transfer Diamond ownership to multisig/timelock
+11. Open permissionless basket creation
 
 ---
 
@@ -581,8 +576,8 @@ event FacetFrozen(address indexed facet);
 
 ## 13. Open Questions — All Resolved
 
-1. ~~**Reward rate schedule**~~ — **RESOLVED:** Halving decay curve. 1.5B EVE over 548 daily epochs. Halves every 183 epochs (~6 months). See §5.1.1.
-2. ~~**Treasury seed amount**~~ — **RESOLVED:** 1.5B EVE seeds the vault at launch.
+1. ~~**Reward rate schedule**~~ — **RESOLVED:** Halving decay curve. 2B EVE over 548 daily epochs. Halves every 183 epochs (~6 months). See §5.1.1.
+2. ~~**Treasury seed amount**~~ — **RESOLVED:** No protocol-side vault seed. EVE already exists; stEVE backing enters through user minting, while rewards are funded separately.
 3. ~~**stEVE transferability**~~ — **RESOLVED:** Fully transferable ERC20. No restrictions.
 4. ~~**Governance**~~ — **RESOLVED:** stEVE carries governance power. Users must stake EVE → stEVE to vote. Raw EVE has no voting power. stEVE is the governance token for EVE and the platform.
 5. ~~**Epoch duration**~~ — **RESOLVED:** 24h daily epochs. 548 total over 1.5 years.
