@@ -272,7 +272,7 @@ contract IntegrationTest is Test, IEdenEvents {
         assertEq(IEdenViewFacet(address(diamond)).getLockedCollateral(1), 0);
         assertEq(IEdenViewFacet(address(diamond)).getOutstandingPrincipal(1, address(eve)), 0);
         assertEq(IEdenViewFacet(address(diamond)).getOutstandingPrincipal(1, address(alt)), 0);
-        assertEq(IEdenViewFacet(address(diamond)).getLoan(loanId).borrower, address(0));
+        assertEq(IEdenViewFacet(address(diamond)).getLoan(loanId).borrower, alice);
     }
 
     function test_Integration_ExpireRecoverBurnsCollateral() public {
@@ -290,7 +290,7 @@ contract IntegrationTest is Test, IEdenEvents {
         assertEq(IEdenViewFacet(address(diamond)).getLockedCollateral(1), 0);
         assertEq(IEdenViewFacet(address(diamond)).getOutstandingPrincipal(1, address(eve)), 0);
         assertEq(IEdenViewFacet(address(diamond)).getOutstandingPrincipal(1, address(alt)), 0);
-        assertEq(IEdenViewFacet(address(diamond)).getLoan(loanId).borrower, address(0));
+        assertEq(IEdenViewFacet(address(diamond)).getLoan(loanId).borrower, alice);
     }
 
     function test_Integration_FlashLoanRepaysAndRoutesFees() public {

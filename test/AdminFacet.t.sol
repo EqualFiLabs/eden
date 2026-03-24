@@ -303,14 +303,18 @@ contract AdminFacetTest is Test {
         vm.stopPrank();
 
         LibLendingStorage.Loan memory repaidLoan = FlashOpsHarnessFacet(address(diamond)).getLoan(0);
-        assertEq(repaidLoan.borrower, address(0));
+        assertEq(repaidLoan.borrower, alice);
+        assertEq(repaidLoan.basketId, 1);
+        assertEq(repaidLoan.collateralUnits, UNIT);
 
         vm.warp(block.timestamp + 2 days);
         IEdenLendingFacet(address(diamond)).recoverExpired(bobLoanId);
 
         LibLendingStorage.Loan memory recoveredLoan =
             FlashOpsHarnessFacet(address(diamond)).getLoan(bobLoanId);
-        assertEq(recoveredLoan.borrower, address(0));
+        assertEq(recoveredLoan.borrower, bob);
+        assertEq(recoveredLoan.basketId, 1);
+        assertEq(recoveredLoan.collateralUnits, UNIT);
     }
 
     function _createBasketZero() internal {
