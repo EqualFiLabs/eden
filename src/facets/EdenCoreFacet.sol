@@ -89,6 +89,15 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
         basket.token = token;
         basket.paused = false;
 
+        store.basketMetadata[basketId] = LibEdenStorage.BasketMetadata({
+            name: params.name,
+            symbol: params.symbol,
+            uri: "",
+            creator: msg.sender,
+            createdAt: uint64(block.timestamp),
+            basketType: basketId == 0 ? uint8(1) : uint8(0)
+        });
+
         emit BasketCreated(basketId, msg.sender, token, params.assets, params.bundleAmounts);
     }
 

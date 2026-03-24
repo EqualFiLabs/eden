@@ -30,6 +30,11 @@ library LibLendingStorage {
         mapping(uint256 => uint256) lockedCollateralUnits;
         mapping(uint256 => mapping(address => uint256)) outstandingPrincipal;
         mapping(uint256 => Loan) loans;
+        mapping(address => uint256[]) borrowerLoanIds;
+        mapping(uint256 => bool) loanClosed;
+        mapping(uint256 => uint256) loanClosedAt;
+        mapping(uint256 => uint8) loanCloseReason;
+        mapping(uint256 => uint256) loanCreatedAt;
     }
 
     function layout() internal pure returns (LendingStorage storage store) {

@@ -76,6 +76,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         lending.lockedCollateralUnits[basketId] = newLockedCollateral;
         uint40 maturity = uint40(block.timestamp + duration);
         loanId = _createLoan(lending, basketId, collateralUnits, maturity, msg.sender);
+        lending.borrowerLoanIds[msg.sender].push(loanId);
+        lending.loanCreatedAt[loanId] = block.timestamp;
         _executeBorrowPayouts(basketId, assets, principals, msg.sender);
 
         _forwardNativeFee(nativeFee);
@@ -95,8 +97,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         uint256 loanId
     ) external nonReentrant {
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
-        LibLendingStorage.Loan memory loan = lending.loans[loanId];
-        if (loan.borrower == address(0)) revert LoanNotFound(loanId);
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
         if (msg.sender != loan.borrower) revert NotBorrower(msg.sender, loan.borrower);
 
         LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
@@ -121,7 +123,9 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
 
         IERC20(basket.token).safeTransfer(loan.borrower, loan.collateralUnits);
 
-        delete lending.loans[loanId];
+        lending.loanClosed[loanId] = true;
+        lending.loanClosedAt[loanId] = block.timestamp;
+        lending.loanCloseReason[loanId] = 1;
         emit LoanRepaid(loanId);
     }
 
@@ -131,7 +135,7 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
     ) external payable nonReentrant {
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
         LibLendingStorage.Loan storage loan = lending.loans[loanId];
-        if (loan.borrower == address(0)) revert LoanNotFound(loanId);
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
         if (msg.sender != loan.borrower) revert NotBorrower(msg.sender, loan.borrower);
         if (block.timestamp > loan.maturity) revert LoanExpired(loanId, loan.maturity);
 
@@ -160,8 +164,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         uint256 loanId
     ) external nonReentrant {
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
-        LibLendingStorage.Loan memory loan = lending.loans[loanId];
-        if (loan.borrower == address(0)) revert LoanNotFound(loanId);
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
         if (block.timestamp <= loan.maturity) revert LoanNotExpired(loanId, loan.maturity);
 
         LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
@@ -186,7 +190,9 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
             loan.basketId, basket, lending.lockedCollateralUnits[loan.basketId], basket.totalUnits
         );
 
-        delete lending.loans[loanId];
+        lending.loanClosed[loanId] = true;
+        lending.loanClosedAt[loanId] = block.timestamp;
+        lending.loanCloseReason[loanId] = 2;
         emit LoanRecovered(loanId, loan.collateralUnits, assets, principals);
     }
 

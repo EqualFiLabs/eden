@@ -27,6 +27,15 @@ library LibEdenStorage {
         bool paused;
     }
 
+    struct BasketMetadata {
+        string name;
+        string symbol;
+        string uri;
+        address creator;
+        uint64 createdAt;
+        uint8 basketType;
+    }
+
     struct EdenStorage {
         uint256 basketCount;
         uint256 steveBasketId;
@@ -45,6 +54,10 @@ library LibEdenStorage {
         address[] facetAddresses;
         mapping(address => bool) frozenFacets;
         uint256 reentrancyStatus;
+        mapping(uint256 => BasketMetadata) basketMetadata;
+        string protocolURI;
+        string contractVersion;
+        mapping(address => string) facetVersions;
     }
 
     function layout() internal pure returns (EdenStorage storage store) {

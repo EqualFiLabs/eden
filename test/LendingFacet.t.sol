@@ -91,6 +91,36 @@ contract LendingHarnessFacet is EdenLendingFacet {
         return LibLendingStorage.layout().loans[loanId];
     }
 
+    function getBorrowerLoanIds(
+        address borrower
+    ) external view returns (uint256[] memory) {
+        return LibLendingStorage.layout().borrowerLoanIds[borrower];
+    }
+
+    function getLoanClosed(
+        uint256 loanId
+    ) external view returns (bool) {
+        return LibLendingStorage.layout().loanClosed[loanId];
+    }
+
+    function getLoanClosedAt(
+        uint256 loanId
+    ) external view returns (uint256) {
+        return LibLendingStorage.layout().loanClosedAt[loanId];
+    }
+
+    function getLoanCloseReason(
+        uint256 loanId
+    ) external view returns (uint8) {
+        return LibLendingStorage.layout().loanCloseReason[loanId];
+    }
+
+    function getLoanCreatedAt(
+        uint256 loanId
+    ) external view returns (uint256) {
+        return LibLendingStorage.layout().loanCreatedAt[loanId];
+    }
+
     function getLockedCollateral(
         uint256 basketId
     ) external view returns (uint256) {
@@ -286,6 +316,12 @@ contract LendingFacetTest is Test {
         assertEq(eve.balanceOf(alice), 200e18);
         assertEq(alt.balanceOf(alice), 100e18);
         assertEq(treasury.balance - treasuryBefore, 0.02 ether);
+        uint256[] memory borrowerLoanIds =
+            LendingHarnessFacet(address(diamond)).getBorrowerLoanIds(alice);
+        assertEq(borrowerLoanIds.length, 1);
+        assertEq(borrowerLoanIds[0], loanId);
+        assertEq(LendingHarnessFacet(address(diamond)).getLoanCreatedAt(loanId), block.timestamp);
+        assertFalse(LendingHarnessFacet(address(diamond)).getLoanClosed(loanId));
 
         uint256 redeemableSupply = LendingHarnessFacet(address(diamond)).getBasketTotalUnits(1)
             - LendingHarnessFacet(address(diamond)).getLockedCollateral(1);
@@ -351,10 +387,12 @@ contract LendingFacetTest is Test {
         IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 2 days);
     }
 
-    function test_Repay_UnlocksCollateralAndDeletesLoan() public {
+    function test_Repay_UnlocksCollateralAndPreservesLoanHistory() public {
         vm.prank(alice);
         uint256 loanId =
             IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 2 days);
+
+        vm.warp(block.timestamp + 1);
 
         vm.startPrank(alice);
         eve.approve(address(diamond), type(uint256).max);
@@ -363,7 +401,9 @@ contract LendingFacetTest is Test {
         vm.stopPrank();
 
         LibLendingStorage.Loan memory loan = LendingHarnessFacet(address(diamond)).getLoan(loanId);
-        assertEq(loan.borrower, address(0));
+        assertEq(loan.borrower, alice);
+        assertEq(loan.basketId, 1);
+        assertEq(loan.collateralUnits, UNIT);
         assertEq(indexToken.balanceOf(alice), 2 * UNIT);
         assertEq(indexToken.balanceOf(address(diamond)), 0);
         assertEq(LendingHarnessFacet(address(diamond)).getLockedCollateral(1), 0);
@@ -371,6 +411,13 @@ contract LendingFacetTest is Test {
         assertEq(LendingHarnessFacet(address(diamond)).getOutstandingPrincipal(1, address(alt)), 0);
         assertEq(LendingHarnessFacet(address(diamond)).getVaultBalance(1, address(eve)), 400e18);
         assertEq(LendingHarnessFacet(address(diamond)).getVaultBalance(1, address(alt)), 200e18);
+        assertTrue(LendingHarnessFacet(address(diamond)).getLoanClosed(loanId));
+        assertEq(LendingHarnessFacet(address(diamond)).getLoanClosedAt(loanId), block.timestamp);
+        assertEq(LendingHarnessFacet(address(diamond)).getLoanCloseReason(loanId), 1);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(EdenLendingFacet.LoanNotFound.selector, loanId));
+        IEdenLendingFacet(address(diamond)).repay(loanId);
     }
 
     function test_Repay_StEVEUnlocksRewardLedgerAndBorrowerOnly() public {
@@ -448,9 +495,11 @@ contract LendingFacetTest is Test {
         vm.warp(uint256(loan.maturity) + 1);
         IEdenLendingFacet(address(diamond)).recoverExpired(loanId);
 
-        LibLendingStorage.Loan memory cleared =
+        LibLendingStorage.Loan memory closedLoan =
             LendingHarnessFacet(address(diamond)).getLoan(loanId);
-        assertEq(cleared.borrower, address(0));
+        assertEq(closedLoan.borrower, alice);
+        assertEq(closedLoan.basketId, 0);
+        assertEq(closedLoan.collateralUnits, UNIT);
         assertEq(stEveToken.totalSupply(), 2 * UNIT);
         assertEq(stEveToken.balanceOf(address(diamond)), 0);
         assertEq(LendingHarnessFacet(address(diamond)).getBasketTotalUnits(0), 2 * UNIT);
@@ -459,16 +508,22 @@ contract LendingFacetTest is Test {
         assertEq(LendingHarnessFacet(address(diamond)).getVaultBalance(0, address(eve)), 2_000e18);
         assertEq(LendingHarnessFacet(address(diamond)).getLockedBalance(alice), 0);
         assertEq(LendingHarnessFacet(address(diamond)).getEffectiveBalance(alice), UNIT);
+        assertTrue(LendingHarnessFacet(address(diamond)).getLoanClosed(loanId));
+        assertEq(LendingHarnessFacet(address(diamond)).getLoanClosedAt(loanId), block.timestamp);
+        assertEq(LendingHarnessFacet(address(diamond)).getLoanCloseReason(loanId), 2);
 
         uint256 redeemableSupply = LendingHarnessFacet(address(diamond)).getBasketTotalUnits(0);
         assertEq(
             LendingHarnessFacet(address(diamond)).getVaultBalance(0, address(eve)),
             redeemableSupply * STEVE_BUNDLE / UNIT
         );
+
+        vm.expectRevert(abi.encodeWithSelector(EdenLendingFacet.LoanNotFound.selector, loanId));
+        IEdenLendingFacet(address(diamond)).recoverExpired(loanId);
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](18);
+        bytes4[] memory selectors = new bytes4[](23);
         selectors[0] = IEdenLendingFacet.borrow.selector;
         selectors[1] = IEdenLendingFacet.repay.selector;
         selectors[2] = IEdenLendingFacet.extend.selector;
@@ -487,6 +542,11 @@ contract LendingFacetTest is Test {
         selectors[15] = LendingHarnessFacet.getBorrowFeeTierCount.selector;
         selectors[16] = LendingHarnessFacet.getLiquidBalance.selector;
         selectors[17] = LendingHarnessFacet.getLockedBalance.selector;
+        selectors[18] = LendingHarnessFacet.getBorrowerLoanIds.selector;
+        selectors[19] = LendingHarnessFacet.getLoanClosed.selector;
+        selectors[20] = LendingHarnessFacet.getLoanClosedAt.selector;
+        selectors[21] = LendingHarnessFacet.getLoanCloseReason.selector;
+        selectors[22] = LendingHarnessFacet.getLoanCreatedAt.selector;
 
         bytes4[] memory extras = new bytes4[](3);
         extras[0] = LendingHarnessFacet.getEffectiveBalance.selector;

@@ -109,6 +109,38 @@ contract CoreHarnessFacet is EdenCoreFacet, IEdenTwabHook {
         return LibLendingStorage.layout().outstandingPrincipal[basketId][asset];
     }
 
+    function getBasketMetadata(
+        uint256 basketId
+    ) external view returns (LibEdenStorage.BasketMetadata memory metadata) {
+        metadata = LibEdenStorage.layout().basketMetadata[basketId];
+    }
+
+    function setProtocolMetadata(
+        string calldata protocolURI_,
+        string calldata contractVersion_,
+        address facet,
+        string calldata facetVersion_
+    ) external {
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        store.protocolURI = protocolURI_;
+        store.contractVersion = contractVersion_;
+        store.facetVersions[facet] = facetVersion_;
+    }
+
+    function getProtocolURI() external view returns (string memory) {
+        return LibEdenStorage.layout().protocolURI;
+    }
+
+    function getContractVersion() external view returns (string memory) {
+        return LibEdenStorage.layout().contractVersion;
+    }
+
+    function getFacetVersion(
+        address facet
+    ) external view returns (string memory) {
+        return LibEdenStorage.layout().facetVersions[facet];
+    }
+
     function exposeDistributeFee(
         uint256 basketId,
         address asset,
@@ -254,6 +286,38 @@ contract CoreFacetTest is Test {
         (bool success,) =
             token.staticcall(abi.encodeWithSelector(bytes4(keccak256("delegates(address)")), alice));
         assertTrue(success);
+    }
+
+    function test_StorageExtensions_BasketMetadataAndProtocolMetadataPersist() public {
+        (uint256 steveBasketId,) = _createSteveBasket(owner);
+        (uint256 basketId,) = _createSingleAssetBasket(owner, address(eve), 100e18, 0, 0);
+
+        vm.prank(owner);
+        CoreHarnessFacet(address(diamond)).setProtocolMetadata(
+            "ipfs://eden-protocol", "1.0.0", address(coreFacet), "core-v1"
+        );
+
+        LibEdenStorage.BasketMetadata memory steveMetadata =
+            CoreHarnessFacet(address(diamond)).getBasketMetadata(steveBasketId);
+        assertEq(steveMetadata.name, "stEVE");
+        assertEq(steveMetadata.symbol, "stEVE");
+        assertEq(steveMetadata.uri, "");
+        assertEq(steveMetadata.creator, owner);
+        assertEq(steveMetadata.createdAt, uint64(block.timestamp));
+        assertEq(steveMetadata.basketType, 1);
+
+        LibEdenStorage.BasketMetadata memory basketMetadata =
+            CoreHarnessFacet(address(diamond)).getBasketMetadata(basketId);
+        assertEq(basketMetadata.name, "Basket");
+        assertEq(basketMetadata.symbol, "BASK");
+        assertEq(basketMetadata.uri, "");
+        assertEq(basketMetadata.creator, owner);
+        assertEq(basketMetadata.createdAt, uint64(block.timestamp));
+        assertEq(basketMetadata.basketType, 0);
+
+        assertEq(CoreHarnessFacet(address(diamond)).getProtocolURI(), "ipfs://eden-protocol");
+        assertEq(CoreHarnessFacet(address(diamond)).getContractVersion(), "1.0.0");
+        assertEq(CoreHarnessFacet(address(diamond)).getFacetVersion(address(coreFacet)), "core-v1");
     }
 
     function test_FeeWaterfall_ConservationAndNonSteveRouting() public {
@@ -477,7 +541,7 @@ contract CoreFacetTest is Test {
     }
 
     function _coreCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](15);
+        bytes4[] memory selectors = new bytes4[](20);
         selectors[0] = IEdenCoreFacet.createBasket.selector;
         selectors[1] = IEdenCoreFacet.mint.selector;
         selectors[2] = IEdenCoreFacet.burn.selector;
@@ -493,6 +557,11 @@ contract CoreFacetTest is Test {
         selectors[12] = CoreHarnessFacet.getBasket.selector;
         selectors[13] = CoreHarnessFacet.getVaultBalance.selector;
         selectors[14] = CoreHarnessFacet.getFeePot.selector;
+        selectors[15] = CoreHarnessFacet.getBasketMetadata.selector;
+        selectors[16] = CoreHarnessFacet.setProtocolMetadata.selector;
+        selectors[17] = CoreHarnessFacet.getProtocolURI.selector;
+        selectors[18] = CoreHarnessFacet.getContractVersion.selector;
+        selectors[19] = CoreHarnessFacet.getFacetVersion.selector;
 
         bytes4[] memory extraSelectors = new bytes4[](3);
         extraSelectors[0] = CoreHarnessFacet.getOutstandingPrincipal.selector;
