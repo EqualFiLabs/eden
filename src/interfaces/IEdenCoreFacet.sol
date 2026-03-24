@@ -28,4 +28,10 @@ interface IEdenCoreFacet is IEdenEvents {
         uint256 units,
         address to
     ) external returns (uint256[] memory assetsOut);
+
+    function onBasketTokenTransfer(
+        address from,
+        address to,
+        uint256 value
+    ) external;
 }

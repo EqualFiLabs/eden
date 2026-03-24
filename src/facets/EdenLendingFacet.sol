@@ -7,6 +7,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEdenLendingFacet } from "src/interfaces/IEdenLendingFacet.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
+import { LibUserBasketTracking } from "src/libraries/LibUserBasketTracking.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { EdenStEVEFacet } from "src/facets/EdenStEVEFacet.sol";
 
@@ -78,6 +79,7 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         loanId = _createLoan(lending, basketId, collateralUnits, maturity, msg.sender);
         lending.borrowerLoanIds[msg.sender].push(loanId);
         lending.loanCreatedAt[loanId] = block.timestamp;
+        LibUserBasketTracking.syncUserBasketPosition(msg.sender, basketId);
         _executeBorrowPayouts(basketId, assets, principals, msg.sender);
 
         _forwardNativeFee(nativeFee);
@@ -126,6 +128,7 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         lending.loanClosed[loanId] = true;
         lending.loanClosedAt[loanId] = block.timestamp;
         lending.loanCloseReason[loanId] = 1;
+        LibUserBasketTracking.syncUserBasketPosition(loan.borrower, loan.basketId);
         emit LoanRepaid(loanId);
     }
 
@@ -193,6 +196,7 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         lending.loanClosed[loanId] = true;
         lending.loanClosedAt[loanId] = block.timestamp;
         lending.loanCloseReason[loanId] = 2;
+        LibUserBasketTracking.syncUserBasketPosition(loan.borrower, loan.basketId);
         emit LoanRecovered(loanId, loan.collateralUnits, assets, principals);
     }
 

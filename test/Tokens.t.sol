@@ -4,11 +4,12 @@ pragma solidity ^0.8.20;
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { Test } from "forge-std/Test.sol";
+import { IEdenBasketPositionHook } from "src/interfaces/IEdenBasketPositionHook.sol";
 import { IEdenTwabHook } from "src/interfaces/IEdenTwabHook.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { StEVEToken } from "src/tokens/StEVEToken.sol";
 
-contract TokensTest is Test, IEdenTwabHook {
+contract TokensTest is Test, IEdenBasketPositionHook, IEdenTwabHook {
     bytes32 internal constant PERMIT_TYPEHASH = keccak256(
         "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
     );
@@ -48,6 +49,14 @@ contract TokensTest is Test, IEdenTwabHook {
         lastHookTo = to;
         lastHookValue = value;
         hookCallCount += 1;
+    }
+
+    function onBasketTokenTransfer(
+        address,
+        address,
+        uint256
+    ) external view {
+        require(msg.sender == address(basketToken) || msg.sender == address(stEveToken), "unexpected basket hook caller");
     }
 
     function test_BasketToken_ERC20Compliance() public {

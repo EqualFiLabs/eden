@@ -23,6 +23,12 @@ contract MockRewardToken is ERC20 {
 }
 
 contract StEVEHarnessFacet is EdenStEVEFacet {
+    function onBasketTokenTransfer(
+        address,
+        address,
+        uint256
+    ) external pure { }
+
     function setStEveBasket(
         address token,
         address rewardToken
@@ -480,7 +486,7 @@ contract StEVEFacetTest is Test {
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](26);
+        bytes4[] memory selectors = new bytes4[](27);
         selectors[0] = IEdenStEVEFacet.claimRewards.selector;
         selectors[1] = IEdenStEVEFacet.fundRewards.selector;
         selectors[2] = IEdenStEVEFacet.setRewardPerEpoch.selector;
@@ -495,18 +501,19 @@ contract StEVEFacetTest is Test {
         selectors[11] = IEdenStEVEFacet.claimableRewardsThroughEpoch.selector;
         selectors[12] = IEdenStEVEFacet.getRewardEpochBreakdown.selector;
         selectors[13] = IEdenStEVEFacet.onStEVETransfer.selector;
-        selectors[14] = StEVEHarnessFacet.setStEveBasket.selector;
-        selectors[15] = StEVEHarnessFacet.setRewardConfig.selector;
-        selectors[16] = StEVEHarnessFacet.mintStEve.selector;
-        selectors[17] = StEVEHarnessFacet.burnStEve.selector;
-        selectors[18] = StEVEHarnessFacet.moveToLocked.selector;
-        selectors[19] = StEVEHarnessFacet.moveToLiquid.selector;
-        selectors[20] = StEVEHarnessFacet.burnLocked.selector;
-        selectors[21] = StEVEHarnessFacet.getLiquidBalance.selector;
-        selectors[22] = StEVEHarnessFacet.getLockedBalance.selector;
-        selectors[23] = StEVEHarnessFacet.getEffectiveBalance.selector;
-        selectors[24] = StEVEHarnessFacet.getUserTwabAccount.selector;
-        selectors[25] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
+        selectors[14] = StEVEHarnessFacet.onBasketTokenTransfer.selector;
+        selectors[15] = StEVEHarnessFacet.setStEveBasket.selector;
+        selectors[16] = StEVEHarnessFacet.setRewardConfig.selector;
+        selectors[17] = StEVEHarnessFacet.mintStEve.selector;
+        selectors[18] = StEVEHarnessFacet.burnStEve.selector;
+        selectors[19] = StEVEHarnessFacet.moveToLocked.selector;
+        selectors[20] = StEVEHarnessFacet.moveToLiquid.selector;
+        selectors[21] = StEVEHarnessFacet.burnLocked.selector;
+        selectors[22] = StEVEHarnessFacet.getLiquidBalance.selector;
+        selectors[23] = StEVEHarnessFacet.getLockedBalance.selector;
+        selectors[24] = StEVEHarnessFacet.getEffectiveBalance.selector;
+        selectors[25] = StEVEHarnessFacet.getUserTwabAccount.selector;
+        selectors[26] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
 
         bytes4[] memory extras = new bytes4[](5);
         extras[0] = StEVEHarnessFacet.getUserCheckpointCount.selector;

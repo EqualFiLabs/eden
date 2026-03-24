@@ -541,27 +541,28 @@ contract CoreFacetTest is Test {
     }
 
     function _coreCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](20);
+        bytes4[] memory selectors = new bytes4[](21);
         selectors[0] = IEdenCoreFacet.createBasket.selector;
         selectors[1] = IEdenCoreFacet.mint.selector;
         selectors[2] = IEdenCoreFacet.burn.selector;
-        selectors[3] = EdenCoreFacet.previewMint.selector;
-        selectors[4] = EdenCoreFacet.previewBurn.selector;
-        selectors[5] = CoreHarnessFacet.setCoreConfig.selector;
-        selectors[6] = CoreHarnessFacet.setOutstandingPrincipal.selector;
-        selectors[7] = CoreHarnessFacet.setVaultBalance.selector;
-        selectors[8] = CoreHarnessFacet.setFeePot.selector;
-        selectors[9] = CoreHarnessFacet.setPaused.selector;
-        selectors[10] = CoreHarnessFacet.getBasketCount.selector;
-        selectors[11] = CoreHarnessFacet.getSteveBasketId.selector;
-        selectors[12] = CoreHarnessFacet.getBasket.selector;
-        selectors[13] = CoreHarnessFacet.getVaultBalance.selector;
-        selectors[14] = CoreHarnessFacet.getFeePot.selector;
-        selectors[15] = CoreHarnessFacet.getBasketMetadata.selector;
-        selectors[16] = CoreHarnessFacet.setProtocolMetadata.selector;
-        selectors[17] = CoreHarnessFacet.getProtocolURI.selector;
-        selectors[18] = CoreHarnessFacet.getContractVersion.selector;
-        selectors[19] = CoreHarnessFacet.getFacetVersion.selector;
+        selectors[3] = IEdenCoreFacet.onBasketTokenTransfer.selector;
+        selectors[4] = EdenCoreFacet.previewMint.selector;
+        selectors[5] = EdenCoreFacet.previewBurn.selector;
+        selectors[6] = CoreHarnessFacet.setCoreConfig.selector;
+        selectors[7] = CoreHarnessFacet.setOutstandingPrincipal.selector;
+        selectors[8] = CoreHarnessFacet.setVaultBalance.selector;
+        selectors[9] = CoreHarnessFacet.setFeePot.selector;
+        selectors[10] = CoreHarnessFacet.setPaused.selector;
+        selectors[11] = CoreHarnessFacet.getBasketCount.selector;
+        selectors[12] = CoreHarnessFacet.getSteveBasketId.selector;
+        selectors[13] = CoreHarnessFacet.getBasket.selector;
+        selectors[14] = CoreHarnessFacet.getVaultBalance.selector;
+        selectors[15] = CoreHarnessFacet.getFeePot.selector;
+        selectors[16] = CoreHarnessFacet.getBasketMetadata.selector;
+        selectors[17] = CoreHarnessFacet.setProtocolMetadata.selector;
+        selectors[18] = CoreHarnessFacet.getProtocolURI.selector;
+        selectors[19] = CoreHarnessFacet.getContractVersion.selector;
+        selectors[20] = CoreHarnessFacet.getFacetVersion.selector;
 
         bytes4[] memory extraSelectors = new bytes4[](3);
         extraSelectors[0] = CoreHarnessFacet.getOutstandingPrincipal.selector;

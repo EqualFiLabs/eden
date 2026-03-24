@@ -21,7 +21,7 @@ contract StEVEToken is BasketToken, ERC20Votes {
         address from,
         address to,
         uint256 value
-    ) internal virtual override(ERC20, ERC20Votes) {
+    ) internal virtual override(BasketToken, ERC20Votes) {
         super._update(from, to, value);
 
         if (from != address(0) || to != address(0)) {

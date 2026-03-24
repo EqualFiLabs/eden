@@ -5,13 +5,15 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEdenCoreFacet } from "src/interfaces/IEdenCoreFacet.sol";
+import { IEdenBasketPositionHook } from "src/interfaces/IEdenBasketPositionHook.sol";
 import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
+import { LibUserBasketTracking } from "src/libraries/LibUserBasketTracking.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { StEVEToken } from "src/tokens/StEVEToken.sol";
 
-contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
+contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet, IEdenBasketPositionHook {
     using SafeERC20 for IERC20;
 
     uint256 internal constant BASIS_POINTS = 10_000;
@@ -39,6 +41,7 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
     error FeeCapExceeded();
     error UnexpectedMsgValue(uint256 expected, uint256 actual);
     error InsufficientVaultBalance(address asset, uint256 expected, uint256 actual);
+    error InvalidBasketTokenCaller(address caller);
     struct MintQuote {
         address[] assets;
         uint256[] baseDeposits;
@@ -130,6 +133,7 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
 
         basket.totalUnits += units;
         BasketToken(basket.token).mintIndexUnits(to, units);
+        LibUserBasketTracking.syncUserBasketPosition(to, basketId);
 
         emit Minted(basketId, msg.sender, units, quote.totalRequired, quote.feeAmounts);
         return units;
@@ -159,6 +163,7 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
 
         basket.totalUnits -= units;
         BasketToken(basket.token).burnIndexUnits(msg.sender, units);
+        LibUserBasketTracking.syncUserBasketPosition(msg.sender, basketId);
 
         for (uint256 i = 0; i < len; i++) {
             _transferAsset(quote.assets[i], to, quote.payoutAmounts[i]);
@@ -166,6 +171,20 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet {
 
         emit Burned(basketId, msg.sender, units, quote.payoutAmounts, quote.feeAmounts);
         return quote.payoutAmounts;
+    }
+
+    function onBasketTokenTransfer(
+        address from,
+        address to,
+        uint256
+    ) external virtual override(IEdenCoreFacet, IEdenBasketPositionHook) {
+        (bool found, uint256 basketId) = LibUserBasketTracking.basketIdForToken(msg.sender);
+        if (!found) revert InvalidBasketTokenCaller(msg.sender);
+
+        LibUserBasketTracking.syncUserBasketPosition(from, basketId);
+        if (to != from) {
+            LibUserBasketTracking.syncUserBasketPosition(to, basketId);
+        }
     }
 
     function previewMint(

@@ -29,6 +29,12 @@ contract MockERC20 is ERC20 {
 }
 
 contract LendingHarnessFacet is EdenLendingFacet {
+    function onBasketTokenTransfer(
+        address,
+        address,
+        uint256
+    ) external pure { }
+
     function setTreasury(
         address treasury
     ) external {
@@ -651,7 +657,7 @@ contract LendingFacetTest is Test {
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](35);
+        bytes4[] memory selectors = new bytes4[](36);
         selectors[0] = IEdenLendingFacet.borrow.selector;
         selectors[1] = IEdenLendingFacet.repay.selector;
         selectors[2] = IEdenLendingFacet.extend.selector;
@@ -671,22 +677,23 @@ contract LendingFacetTest is Test {
         selectors[16] = IEdenLendingFacet.previewRepay.selector;
         selectors[17] = IEdenLendingFacet.previewExtend.selector;
         selectors[18] = IEdenStEVEFacet.onStEVETransfer.selector;
-        selectors[19] = LendingHarnessFacet.setTreasury.selector;
-        selectors[20] = LendingHarnessFacet.setBasket.selector;
-        selectors[21] = LendingHarnessFacet.mintReceiptUnits.selector;
-        selectors[22] = LendingHarnessFacet.setVaultBalance.selector;
-        selectors[23] = LendingHarnessFacet.getLoan.selector;
-        selectors[24] = LendingHarnessFacet.getLockedCollateral.selector;
-        selectors[25] = LendingHarnessFacet.getOutstandingPrincipal.selector;
-        selectors[26] = LendingHarnessFacet.getBorrowFeeTier.selector;
-        selectors[27] = LendingHarnessFacet.getBorrowFeeTierCount.selector;
-        selectors[28] = LendingHarnessFacet.getLiquidBalance.selector;
-        selectors[29] = LendingHarnessFacet.getLockedBalance.selector;
-        selectors[30] = LendingHarnessFacet.getBorrowerLoanIds.selector;
-        selectors[31] = LendingHarnessFacet.getLoanClosed.selector;
-        selectors[32] = LendingHarnessFacet.getLoanClosedAt.selector;
-        selectors[33] = LendingHarnessFacet.getLoanCloseReason.selector;
-        selectors[34] = LendingHarnessFacet.getLoanCreatedAt.selector;
+        selectors[19] = LendingHarnessFacet.onBasketTokenTransfer.selector;
+        selectors[20] = LendingHarnessFacet.setTreasury.selector;
+        selectors[21] = LendingHarnessFacet.setBasket.selector;
+        selectors[22] = LendingHarnessFacet.mintReceiptUnits.selector;
+        selectors[23] = LendingHarnessFacet.setVaultBalance.selector;
+        selectors[24] = LendingHarnessFacet.getLoan.selector;
+        selectors[25] = LendingHarnessFacet.getLockedCollateral.selector;
+        selectors[26] = LendingHarnessFacet.getOutstandingPrincipal.selector;
+        selectors[27] = LendingHarnessFacet.getBorrowFeeTier.selector;
+        selectors[28] = LendingHarnessFacet.getBorrowFeeTierCount.selector;
+        selectors[29] = LendingHarnessFacet.getLiquidBalance.selector;
+        selectors[30] = LendingHarnessFacet.getLockedBalance.selector;
+        selectors[31] = LendingHarnessFacet.getBorrowerLoanIds.selector;
+        selectors[32] = LendingHarnessFacet.getLoanClosed.selector;
+        selectors[33] = LendingHarnessFacet.getLoanClosedAt.selector;
+        selectors[34] = LendingHarnessFacet.getLoanCloseReason.selector;
+        selectors[35] = LendingHarnessFacet.getLoanCreatedAt.selector;
 
         bytes4[] memory extras = new bytes4[](3);
         extras[0] = LendingHarnessFacet.getEffectiveBalance.selector;

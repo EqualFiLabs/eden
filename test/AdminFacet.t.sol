@@ -33,6 +33,12 @@ contract MockERC20 is ERC20 {
 }
 
 contract FlashOpsHarnessFacet is EdenFlashFacet {
+    function onBasketTokenTransfer(
+        address,
+        address,
+        uint256
+    ) external pure override { }
+
     function getBasketConfig(
         uint256 basketId
     )
@@ -393,14 +399,15 @@ contract AdminFacetTest is Test {
         adminSelectors[6] = IEdenAdminFacet.setTreasury.selector;
         adminSelectors[7] = IEdenAdminFacet.setTimelock.selector;
 
-        bytes4[] memory flashSelectors = new bytes4[](7);
+        bytes4[] memory flashSelectors = new bytes4[](8);
         flashSelectors[0] = IEdenCoreFacet.createBasket.selector;
         flashSelectors[1] = IEdenCoreFacet.mint.selector;
         flashSelectors[2] = IEdenCoreFacet.burn.selector;
-        flashSelectors[3] = IEdenFlashFacet.flashLoan.selector;
-        flashSelectors[4] = FlashOpsHarnessFacet.getBasketConfig.selector;
-        flashSelectors[5] = FlashOpsHarnessFacet.getProtocolConfig.selector;
-        flashSelectors[6] = FlashOpsHarnessFacet.getLoan.selector;
+        flashSelectors[3] = IEdenCoreFacet.onBasketTokenTransfer.selector;
+        flashSelectors[4] = IEdenFlashFacet.flashLoan.selector;
+        flashSelectors[5] = FlashOpsHarnessFacet.getBasketConfig.selector;
+        flashSelectors[6] = FlashOpsHarnessFacet.getProtocolConfig.selector;
+        flashSelectors[7] = FlashOpsHarnessFacet.getLoan.selector;
 
         bytes4[] memory lendingSelectors = new bytes4[](6);
         lendingSelectors[0] = IEdenLendingFacet.borrow.selector;

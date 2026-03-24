@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import { IEdenBasketPositionHook } from "src/interfaces/IEdenBasketPositionHook.sol";
 
 contract BasketToken is ERC20, ERC20Permit {
     error ZeroMinter();
@@ -36,5 +37,17 @@ contract BasketToken is ERC20, ERC20Permit {
         uint256 amount
     ) external virtual onlyMinter {
         _burn(from, amount);
+    }
+
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal virtual override {
+        super._update(from, to, value);
+
+        if (from != address(0) && to != address(0)) {
+            IEdenBasketPositionHook(minter).onBasketTokenTransfer(from, to, value);
+        }
     }
 }

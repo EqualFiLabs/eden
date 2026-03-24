@@ -433,10 +433,11 @@ contract ReentrancyTest is Test {
     }
 
     function _coreSelectors() internal pure returns (bytes4[] memory selectors) {
-        selectors = new bytes4[](3);
+        selectors = new bytes4[](4);
         selectors[0] = IEdenCoreFacet.createBasket.selector;
         selectors[1] = IEdenCoreFacet.mint.selector;
         selectors[2] = IEdenCoreFacet.burn.selector;
+        selectors[3] = IEdenCoreFacet.onBasketTokenTransfer.selector;
     }
 
     function _stEveSelectors() internal pure returns (bytes4[] memory selectors) {

@@ -58,6 +58,8 @@ library LibEdenStorage {
         string protocolURI;
         string contractVersion;
         mapping(address => string) facetVersions;
+        mapping(address => uint256[]) userBasketIds;
+        mapping(address => mapping(uint256 => bool)) userHasBasket;
     }
 
     function layout() internal pure returns (EdenStorage storage store) {
