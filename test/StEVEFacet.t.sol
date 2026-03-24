@@ -343,6 +343,9 @@ contract StEVEFacetTest is Test {
     }
 
     function test_ClaimRewards_PartialReserveAndHardCap() public {
+        uint256 epochReward = 100e18;
+        StEVEHarnessFacet(address(diamond))
+            .setRewardConfig(block.timestamp, DAY, 183, 3, epochReward, 548);
         StEVEHarnessFacet(address(diamond)).mintStEve(address(token), alice, 100e18);
         _fundRewards(150e18);
 
@@ -351,10 +354,57 @@ contract StEVEFacetTest is Test {
         vm.prank(alice);
         uint256 claimed = IEdenStEVEFacet(address(diamond)).claimRewards();
 
-        assertEq(claimed, 150e18);
-        assertEq(rewardToken.balanceOf(alice), 150e18);
-        assertEq(IEdenStEVEFacet(address(diamond)).rewardReserveBalance(), 0);
-        assertLe(claimed, 150e18);
+        assertEq(claimed, epochReward);
+        assertEq(rewardToken.balanceOf(alice), epochReward);
+        assertEq(IEdenStEVEFacet(address(diamond)).rewardReserveBalance(), 50e18);
+        assertEq(StEVEHarnessFacet(address(diamond)).getLastClaimedEpoch(alice), 1);
+        assertEq(IEdenStEVEFacet(address(diamond)).claimableRewards(alice), 0);
+
+        _fundRewards(100e18);
+
+        vm.prank(alice);
+        uint256 secondClaim = IEdenStEVEFacet(address(diamond)).claimRewards();
+
+        assertEq(secondClaim, epochReward);
+        assertEq(rewardToken.balanceOf(alice), 2 * epochReward);
+        assertEq(StEVEHarnessFacet(address(diamond)).getLastClaimedEpoch(alice), 2);
+    }
+
+    function test_RewardViews_ConfigPreviewAndBreakdown() public {
+        StEVEHarnessFacet(address(diamond)).mintStEve(address(token), alice, 100e18);
+        _fundRewards(BASE_REWARD * 3);
+
+        vm.warp(block.timestamp + (2 * DAY) + 1);
+
+        IEdenStEVEFacet.RewardConfig memory config =
+            IEdenStEVEFacet(address(diamond)).getRewardConfig();
+        assertEq(config.genesisTimestamp, block.timestamp - ((2 * DAY) + 1));
+        assertEq(config.epochDuration, DAY);
+        assertEq(config.baseRewardPerEpoch, BASE_REWARD);
+        assertEq(config.totalEpochs, 548);
+        assertEq(config.rewardReserve, BASE_REWARD * 3);
+
+        assertEq(IEdenStEVEFacet(address(diamond)).claimableRewards(alice), BASE_REWARD * 2);
+        assertEq(
+            IEdenStEVEFacet(address(diamond)).claimableRewardsThroughEpoch(alice, 0), BASE_REWARD
+        );
+
+        IEdenStEVEFacet.RewardPreview memory preview =
+            IEdenStEVEFacet(address(diamond)).previewClaimRewards(alice);
+        assertEq(preview.user, alice);
+        assertEq(preview.fromEpoch, 0);
+        assertEq(preview.toEpoch, 1);
+        assertEq(preview.totalClaimable, BASE_REWARD * 2);
+
+        IEdenStEVEFacet.RewardEpochBreakdown[] memory breakdown =
+            IEdenStEVEFacet(address(diamond)).getRewardEpochBreakdown(alice, 0, 1);
+        assertEq(breakdown.length, 2);
+        assertEq(breakdown[0].epoch, 0);
+        assertEq(breakdown[0].reward, BASE_REWARD);
+        assertEq(breakdown[0].userTwab, 100e18);
+        assertEq(breakdown[0].totalTwab, 100e18);
+        assertEq(breakdown[1].epoch, 1);
+        assertEq(breakdown[1].reward, BASE_REWARD);
     }
 
     function test_ReserveManagement_FundAndOverrideViews() public {
@@ -389,7 +439,7 @@ contract StEVEFacetTest is Test {
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](21);
+        bytes4[] memory selectors = new bytes4[](26);
         selectors[0] = IEdenStEVEFacet.claimRewards.selector;
         selectors[1] = IEdenStEVEFacet.fundRewards.selector;
         selectors[2] = IEdenStEVEFacet.setRewardPerEpoch.selector;
@@ -398,19 +448,24 @@ contract StEVEFacetTest is Test {
         selectors[5] = IEdenStEVEFacet.rewardReserveBalance.selector;
         selectors[6] = IEdenStEVEFacet.currentEmissionRate.selector;
         selectors[7] = IEdenStEVEFacet.getUserTwab.selector;
-        selectors[8] = IEdenStEVEFacet.onStEVETransfer.selector;
-        selectors[9] = StEVEHarnessFacet.setStEveBasket.selector;
-        selectors[10] = StEVEHarnessFacet.setRewardConfig.selector;
-        selectors[11] = StEVEHarnessFacet.mintStEve.selector;
-        selectors[12] = StEVEHarnessFacet.burnStEve.selector;
-        selectors[13] = StEVEHarnessFacet.moveToLocked.selector;
-        selectors[14] = StEVEHarnessFacet.moveToLiquid.selector;
-        selectors[15] = StEVEHarnessFacet.burnLocked.selector;
-        selectors[16] = StEVEHarnessFacet.getLiquidBalance.selector;
-        selectors[17] = StEVEHarnessFacet.getLockedBalance.selector;
-        selectors[18] = StEVEHarnessFacet.getEffectiveBalance.selector;
-        selectors[19] = StEVEHarnessFacet.getUserTwabAccount.selector;
-        selectors[20] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
+        selectors[8] = IEdenStEVEFacet.getRewardConfig.selector;
+        selectors[9] = IEdenStEVEFacet.claimableRewards.selector;
+        selectors[10] = IEdenStEVEFacet.previewClaimRewards.selector;
+        selectors[11] = IEdenStEVEFacet.claimableRewardsThroughEpoch.selector;
+        selectors[12] = IEdenStEVEFacet.getRewardEpochBreakdown.selector;
+        selectors[13] = IEdenStEVEFacet.onStEVETransfer.selector;
+        selectors[14] = StEVEHarnessFacet.setStEveBasket.selector;
+        selectors[15] = StEVEHarnessFacet.setRewardConfig.selector;
+        selectors[16] = StEVEHarnessFacet.mintStEve.selector;
+        selectors[17] = StEVEHarnessFacet.burnStEve.selector;
+        selectors[18] = StEVEHarnessFacet.moveToLocked.selector;
+        selectors[19] = StEVEHarnessFacet.moveToLiquid.selector;
+        selectors[20] = StEVEHarnessFacet.burnLocked.selector;
+        selectors[21] = StEVEHarnessFacet.getLiquidBalance.selector;
+        selectors[22] = StEVEHarnessFacet.getLockedBalance.selector;
+        selectors[23] = StEVEHarnessFacet.getEffectiveBalance.selector;
+        selectors[24] = StEVEHarnessFacet.getUserTwabAccount.selector;
+        selectors[25] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
 
         bytes4[] memory extras = new bytes4[](5);
         extras[0] = StEVEHarnessFacet.getUserCheckpointCount.selector;

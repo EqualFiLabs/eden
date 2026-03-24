@@ -36,28 +36,12 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
 
     function claimRewards() external nonReentrant returns (uint256 totalClaimed) {
         LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
-        uint256 current = currentEpoch();
-        if (current == 0 || st.totalEpochs == 0) return 0;
+        (uint256 startEpoch, uint256 endEpoch, uint256 claimable) =
+            _previewClaimRange(msg.sender, _latestCompletedEpoch(st));
+        if (claimable == 0) return 0;
 
-        uint256 startEpoch = st.lastClaimedEpoch[msg.sender];
-        uint256 latestCompleted = current - 1;
-        if (startEpoch >= st.totalEpochs || startEpoch > latestCompleted) return 0;
-
-        uint256 endEpoch = latestCompleted;
-        if (endEpoch >= st.totalEpochs) {
-            endEpoch = st.totalEpochs - 1;
-        }
-
-        for (uint256 epoch = startEpoch; epoch <= endEpoch; epoch++) {
-            totalClaimed += _getUserRewardForEpoch(msg.sender, epoch);
-        }
-
-        uint256 reserve = st.rewardReserve;
-        if (totalClaimed > reserve) {
-            totalClaimed = reserve;
-        }
-
-        st.rewardReserve = reserve - totalClaimed;
+        totalClaimed = claimable;
+        st.rewardReserve -= totalClaimed;
         st.lastClaimedEpoch[msg.sender] = endEpoch + 1;
 
         if (totalClaimed > 0) {
@@ -154,6 +138,92 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
 
     function currentEmissionRate() external view returns (uint256) {
         return rewardForEpoch(currentEpoch());
+    }
+
+    function getRewardConfig() external view returns (RewardConfig memory config) {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        config = RewardConfig({
+            genesisTimestamp: st.genesisTimestamp,
+            epochDuration: st.epochDuration,
+            halvingInterval: st.halvingInterval,
+            maxPeriods: st.maxPeriods,
+            baseRewardPerEpoch: st.baseRewardPerEpoch,
+            totalEpochs: st.totalEpochs,
+            rewardReserve: st.rewardReserve,
+            rewardPerEpochOverride: st.rewardPerEpochOverride,
+            maxRewardPerEpochOverride: st.maxRewardPerEpochOverride
+        });
+    }
+
+    function claimableRewards(
+        address user
+    ) public view returns (uint256 totalClaimable) {
+        (, , totalClaimable) = _previewClaimRange(user, type(uint256).max);
+    }
+
+    function previewClaimRewards(
+        address user
+    ) external view returns (RewardPreview memory preview) {
+        (preview.fromEpoch, preview.toEpoch, preview.totalClaimable) =
+            _previewClaimRange(user, _latestCompletedEpoch(LibStEVEStorage.layout()));
+        preview.user = user;
+    }
+
+    function claimableRewardsThroughEpoch(
+        address user,
+        uint256 epoch
+    ) external view returns (uint256 totalClaimable) {
+        (, , totalClaimable) = _previewClaimRange(user, epoch);
+    }
+
+    function getRewardEpochBreakdown(
+        address user,
+        uint256 startEpoch,
+        uint256 endEpoch
+    ) external view returns (RewardEpochBreakdown[] memory breakdown) {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        if (st.totalEpochs == 0 || st.epochDuration == 0 || startEpoch > endEpoch) {
+            return new RewardEpochBreakdown[](0);
+        }
+
+        uint256 current = currentEpoch();
+        if (current == 0) {
+            return new RewardEpochBreakdown[](0);
+        }
+
+        uint256 latestCompleted = _latestCompletedEpoch(st);
+        if (startEpoch >= st.totalEpochs || startEpoch > latestCompleted) {
+            return new RewardEpochBreakdown[](0);
+        }
+
+        if (endEpoch >= st.totalEpochs) {
+            endEpoch = st.totalEpochs - 1;
+        }
+        if (endEpoch > latestCompleted) {
+            endEpoch = latestCompleted;
+        }
+        if (startEpoch > endEpoch) {
+            return new RewardEpochBreakdown[](0);
+        }
+
+        uint256 len = endEpoch - startEpoch + 1;
+        breakdown = new RewardEpochBreakdown[](len);
+
+        for (uint256 i = 0; i < len; i++) {
+            uint256 epoch = startEpoch + i;
+            uint256 epochStart = st.genesisTimestamp + (epoch * st.epochDuration);
+            uint256 epochEnd = epochStart + st.epochDuration;
+            uint256 userTwab = _averageBalanceOverInterval(user, epochStart, epochEnd);
+            uint256 totalTwab = _averageGlobalBalanceOverInterval(epochStart, epochEnd);
+            uint256 reward = totalTwab == 0 ? 0 : Math.mulDiv(rewardForEpoch(epoch), userTwab, totalTwab);
+
+            breakdown[i] = RewardEpochBreakdown({
+                epoch: epoch,
+                reward: reward,
+                userTwab: userTwab,
+                totalTwab: totalTwab
+            });
+        }
     }
 
     function getUserTwab(
@@ -311,6 +381,65 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
         if (totalTwab == 0) return 0;
 
         return Math.mulDiv(rewardForEpoch(epoch), userTwab, totalTwab);
+    }
+
+    function _previewClaimRange(
+        address user,
+        uint256 maxEpoch
+    ) internal view returns (uint256 fromEpoch, uint256 toEpoch, uint256 totalClaimable) {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        fromEpoch = st.lastClaimedEpoch[user];
+        toEpoch = _epochBefore(fromEpoch);
+
+        if (st.totalEpochs == 0 || st.epochDuration == 0 || fromEpoch >= st.totalEpochs) {
+            return (fromEpoch, toEpoch, 0);
+        }
+
+        uint256 current = currentEpoch();
+        if (current == 0) {
+            return (fromEpoch, toEpoch, 0);
+        }
+
+        uint256 latestCompleted = _latestCompletedEpoch(st);
+        if (fromEpoch > latestCompleted) {
+            return (fromEpoch, toEpoch, 0);
+        }
+
+        if (maxEpoch < latestCompleted) {
+            latestCompleted = maxEpoch;
+        }
+        if (fromEpoch > latestCompleted) {
+            return (fromEpoch, toEpoch, 0);
+        }
+
+        uint256 reserveRemaining = st.rewardReserve;
+        for (uint256 epoch = fromEpoch; epoch <= latestCompleted; epoch++) {
+            uint256 reward = _getUserRewardForEpoch(user, epoch);
+            if (reward > reserveRemaining) break;
+
+            reserveRemaining -= reward;
+            totalClaimable += reward;
+            toEpoch = epoch;
+        }
+    }
+
+    function _latestCompletedEpoch(
+        LibStEVEStorage.StEVEStorage storage st
+    ) internal view returns (uint256 latestCompleted) {
+        if (st.totalEpochs == 0) return 0;
+        uint256 current = currentEpoch();
+        latestCompleted = current - 1;
+        if (latestCompleted >= st.totalEpochs) {
+            latestCompleted = st.totalEpochs - 1;
+        }
+    }
+
+    function _epochBefore(
+        uint256 epoch
+    ) internal pure returns (uint256 previousEpoch) {
+        unchecked {
+            previousEpoch = epoch - 1;
+        }
     }
 
     function _averageBalanceOverInterval(

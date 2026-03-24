@@ -239,6 +239,226 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         }
     }
 
+    function loanCount() external view returns (uint256) {
+        return LibLendingStorage.layout().nextLoanId;
+    }
+
+    function borrowerLoanCount(
+        address user
+    ) external view returns (uint256) {
+        return LibLendingStorage.layout().borrowerLoanIds[user].length;
+    }
+
+    function getLoanView(
+        uint256 loanId
+    ) public view returns (LoanView memory loanView) {
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0)) revert LoanNotFound(loanId);
+
+        (address[] memory assets, uint256[] memory principals) =
+            _deriveLoanPrincipals(LibEdenStorage.layout().baskets[loan.basketId], loan.collateralUnits, loan.ltvBps);
+        (bool hasTier, uint256 extensionFeeNative) =
+            _findBorrowFeeTier(lending.borrowFeeTiers[loan.basketId], loan.collateralUnits);
+
+        bool closed = lending.loanClosed[loanId];
+        bool expired = block.timestamp > loan.maturity;
+        loanView = LoanView({
+            loanId: loanId,
+            borrower: loan.borrower,
+            basketId: loan.basketId,
+            collateralUnits: loan.collateralUnits,
+            ltvBps: loan.ltvBps,
+            maturity: loan.maturity,
+            createdAt: lending.loanCreatedAt[loanId],
+            closedAt: lending.loanClosedAt[loanId],
+            closeReason: lending.loanCloseReason[loanId],
+            active: !closed && !expired,
+            expired: expired,
+            assets: assets,
+            principals: principals,
+            extensionFeeNative: hasTier ? extensionFeeNative : 0
+        });
+    }
+
+    function getLoanIdsByBorrower(
+        address user
+    ) public view returns (uint256[] memory) {
+        return _sliceLoanIds(LibLendingStorage.layout().borrowerLoanIds[user], 0, type(uint256).max);
+    }
+
+    function getActiveLoanIdsByBorrower(
+        address user
+    ) public view returns (uint256[] memory loanIds) {
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        uint256[] storage allLoanIds = lending.borrowerLoanIds[user];
+        uint256 len = allLoanIds.length;
+        uint256 activeCount;
+
+        for (uint256 i = 0; i < len; i++) {
+            LibLendingStorage.Loan storage loan = lending.loans[allLoanIds[i]];
+            if (_isActiveLoan(lending, allLoanIds[i], loan)) {
+                activeCount++;
+            }
+        }
+
+        loanIds = new uint256[](activeCount);
+        uint256 index;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 loanId = allLoanIds[i];
+            LibLendingStorage.Loan storage loan = lending.loans[loanId];
+            if (_isActiveLoan(lending, loanId, loan)) {
+                loanIds[index++] = loanId;
+            }
+        }
+    }
+
+    function getLoansByBorrower(
+        address user
+    ) external view returns (LoanView[] memory loans) {
+        uint256[] memory loanIds = getLoanIdsByBorrower(user);
+        uint256 len = loanIds.length;
+        loans = new LoanView[](len);
+        for (uint256 i = 0; i < len; i++) {
+            loans[i] = getLoanView(loanIds[i]);
+        }
+    }
+
+    function getActiveLoansByBorrower(
+        address user
+    ) external view returns (LoanView[] memory loans) {
+        uint256[] memory loanIds = getActiveLoanIdsByBorrower(user);
+        uint256 len = loanIds.length;
+        loans = new LoanView[](len);
+        for (uint256 i = 0; i < len; i++) {
+            loans[i] = getLoanView(loanIds[i]);
+        }
+    }
+
+    function getLoanIdsByBorrowerPaginated(
+        address user,
+        uint256 start,
+        uint256 limit
+    ) external view returns (uint256[] memory) {
+        return _sliceLoanIds(LibLendingStorage.layout().borrowerLoanIds[user], start, limit);
+    }
+
+    function getActiveLoanIdsByBorrowerPaginated(
+        address user,
+        uint256 start,
+        uint256 limit
+    ) external view returns (uint256[] memory loanIds) {
+        if (limit == 0) return new uint256[](0);
+
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        uint256[] storage allLoanIds = lending.borrowerLoanIds[user];
+        uint256 len = allLoanIds.length;
+        uint256 activeCount;
+
+        for (uint256 i = 0; i < len; i++) {
+            LibLendingStorage.Loan storage loan = lending.loans[allLoanIds[i]];
+            if (_isActiveLoan(lending, allLoanIds[i], loan)) {
+                activeCount++;
+            }
+        }
+
+        if (start >= activeCount) {
+            return new uint256[](0);
+        }
+
+        uint256 remaining = activeCount - start;
+        uint256 resultLen = remaining < limit ? remaining : limit;
+        loanIds = new uint256[](resultLen);
+
+        uint256 activeIndex;
+        uint256 resultIndex;
+        for (uint256 i = 0; i < len && resultIndex < resultLen; i++) {
+            uint256 loanId = allLoanIds[i];
+            LibLendingStorage.Loan storage loan = lending.loans[loanId];
+            if (!_isActiveLoan(lending, loanId, loan)) continue;
+            if (activeIndex++ < start) continue;
+
+            loanIds[resultIndex++] = loanId;
+        }
+    }
+
+    function previewBorrow(
+        uint256 basketId,
+        uint256 collateralUnits,
+        uint40 duration
+    ) external view basketExists(basketId) returns (BorrowPreview memory preview) {
+        if (collateralUnits == 0) revert InvalidCollateralUnits();
+
+        LibEdenStorage.Basket storage basket = LibEdenStorage.layout().baskets[basketId];
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        _validateDuration(lending.lendingConfigs[basketId], duration);
+
+        (address[] memory assets, uint256[] memory principals) =
+            _deriveLoanPrincipals(basket, collateralUnits, LibLendingStorage.DEFAULT_LTV_BPS);
+        uint256 resultingLockedCollateral = lending.lockedCollateralUnits[basketId] + collateralUnits;
+
+        preview.basketId = basketId;
+        preview.collateralUnits = collateralUnits;
+        preview.duration = duration;
+        preview.assets = assets;
+        preview.principals = principals;
+        preview.feeNative =
+            _selectBorrowFeeTier(lending.borrowFeeTiers[basketId], basketId, collateralUnits)
+                .flatFeeNative;
+        preview.maturity = uint40(block.timestamp + duration);
+        preview.resultingLockedCollateral = resultingLockedCollateral;
+        preview.invariantSatisfied = _redeemabilityInvariantSatisfied(
+            basketId, basket, assets, principals, resultingLockedCollateral, basket.totalUnits
+        );
+    }
+
+    function previewRepay(
+        uint256 loanId
+    ) external view returns (RepayPreview memory preview) {
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
+
+        (address[] memory assets, uint256[] memory principals) =
+            _deriveLoanPrincipals(LibEdenStorage.layout().baskets[loan.basketId], loan.collateralUnits, loan.ltvBps);
+        preview = RepayPreview({
+            loanId: loanId,
+            assets: assets,
+            principals: principals,
+            unlockedCollateralUnits: loan.collateralUnits
+        });
+    }
+
+    function previewExtend(
+        uint256 loanId,
+        uint40 addedDuration
+    ) external view returns (ExtendPreview memory preview) {
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
+        if (block.timestamp > loan.maturity) revert LoanExpired(loanId, loan.maturity);
+
+        LibLendingStorage.LendingConfig memory config = lending.lendingConfigs[loan.basketId];
+        if (addedDuration == 0 || config.maxDuration == 0) {
+            revert InvalidDuration(addedDuration, config.minDuration, config.maxDuration);
+        }
+
+        uint256 newMaturity = uint256(loan.maturity) + addedDuration;
+        uint256 maxAllowedMaturity = block.timestamp + config.maxDuration;
+        if (newMaturity > maxAllowedMaturity) {
+            revert InvalidDuration(uint256(addedDuration), config.minDuration, config.maxDuration);
+        }
+
+        preview = ExtendPreview({
+            loanId: loanId,
+            addedDuration: addedDuration,
+            newMaturity: uint40(newMaturity),
+            feeNative: _selectBorrowFeeTier(
+                lending.borrowFeeTiers[loan.basketId], loan.basketId, loan.collateralUnits
+            ).flatFeeNative
+        });
+    }
+
     function _validateDuration(
         LibLendingStorage.LendingConfig memory config,
         uint40 duration
@@ -309,6 +529,21 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         if (!found) revert BelowMinimumTier(basketId, collateralUnits);
     }
 
+    function _findBorrowFeeTier(
+        LibLendingStorage.BorrowFeeTier[] storage tiers,
+        uint256 collateralUnits
+    ) internal view returns (bool found, uint256 flatFeeNative) {
+        uint256 len = tiers.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (collateralUnits >= tiers[i].minCollateralUnits) {
+                found = true;
+                flatFeeNative = tiers[i].flatFeeNative;
+            } else {
+                break;
+            }
+        }
+    }
+
     function _deriveLoanPrincipals(
         LibEdenStorage.Basket storage basket,
         uint256 collateralUnits,
@@ -324,6 +559,57 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
                 collateralUnits, basket.bundleAmounts[i] * ltvBps, UNIT_SCALE * BASIS_POINTS
             );
         }
+    }
+
+    function _sliceLoanIds(
+        uint256[] storage source,
+        uint256 start,
+        uint256 limit
+    ) internal view returns (uint256[] memory loanIds) {
+        uint256 len = source.length;
+        if (start >= len || limit == 0) {
+            return new uint256[](0);
+        }
+
+        uint256 remaining = len - start;
+        uint256 resultLen = remaining < limit ? remaining : limit;
+        loanIds = new uint256[](resultLen);
+        for (uint256 i = 0; i < resultLen; i++) {
+            loanIds[i] = source[start + i];
+        }
+    }
+
+    function _isActiveLoan(
+        LibLendingStorage.LendingStorage storage lending,
+        uint256 loanId,
+        LibLendingStorage.Loan storage loan
+    ) internal view returns (bool) {
+        return loan.borrower != address(0) && !lending.loanClosed[loanId] && block.timestamp <= loan.maturity;
+    }
+
+    function _redeemabilityInvariantSatisfied(
+        uint256 basketId,
+        LibEdenStorage.Basket storage basket,
+        address[] memory assets,
+        uint256[] memory principals,
+        uint256 lockedCollateralUnits,
+        uint256 totalUnits
+    ) internal view returns (bool) {
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        uint256 redeemableSupply = totalUnits - lockedCollateralUnits;
+        uint256 len = assets.length;
+
+        for (uint256 i = 0; i < len; i++) {
+            uint256 currentVault = store.vaultBalances[basketId][assets[i]];
+            if (currentVault < principals[i]) return false;
+
+            uint256 remainingVault = currentVault - principals[i];
+            uint256 requiredVault =
+                Math.mulDiv(redeemableSupply, basket.bundleAmounts[i], UNIT_SCALE);
+            if (remainingVault < requiredVault) return false;
+        }
+
+        return true;
     }
 
     function _enforceRedeemabilityInvariant(

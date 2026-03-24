@@ -352,6 +352,64 @@ contract LendingFacetTest is Test {
         );
     }
 
+    function test_LendingViewsAndPagination_ExposeBorrowerHistoryAndActiveSubset() public {
+        vm.startPrank(alice);
+        uint256 firstLoan =
+            IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 2 days);
+        uint256 secondLoan =
+            IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 3 days);
+        eve.approve(address(diamond), type(uint256).max);
+        alt.approve(address(diamond), type(uint256).max);
+        IEdenLendingFacet(address(diamond)).repay(firstLoan);
+        vm.stopPrank();
+
+        assertEq(IEdenLendingFacet(address(diamond)).loanCount(), 2);
+        assertEq(IEdenLendingFacet(address(diamond)).borrowerLoanCount(alice), 2);
+
+        uint256[] memory allLoanIds = IEdenLendingFacet(address(diamond)).getLoanIdsByBorrower(alice);
+        assertEq(allLoanIds.length, 2);
+        assertEq(allLoanIds[0], firstLoan);
+        assertEq(allLoanIds[1], secondLoan);
+
+        uint256[] memory paginatedLoanIds =
+            IEdenLendingFacet(address(diamond)).getLoanIdsByBorrowerPaginated(alice, 1, 1);
+        assertEq(paginatedLoanIds.length, 1);
+        assertEq(paginatedLoanIds[0], secondLoan);
+
+        uint256[] memory activeLoanIds =
+            IEdenLendingFacet(address(diamond)).getActiveLoanIdsByBorrower(alice);
+        assertEq(activeLoanIds.length, 1);
+        assertEq(activeLoanIds[0], secondLoan);
+
+        uint256[] memory activeLoanIdsPage =
+            IEdenLendingFacet(address(diamond)).getActiveLoanIdsByBorrowerPaginated(alice, 0, 1);
+        assertEq(activeLoanIdsPage.length, 1);
+        assertEq(activeLoanIdsPage[0], secondLoan);
+
+        IEdenLendingFacet.LoanView memory closedLoan =
+            IEdenLendingFacet(address(diamond)).getLoanView(firstLoan);
+        assertEq(closedLoan.loanId, firstLoan);
+        assertEq(closedLoan.borrower, alice);
+        assertEq(closedLoan.createdAt, LendingHarnessFacet(address(diamond)).getLoanCreatedAt(firstLoan));
+        assertEq(closedLoan.closedAt, LendingHarnessFacet(address(diamond)).getLoanClosedAt(firstLoan));
+        assertEq(closedLoan.closeReason, 1);
+        assertFalse(closedLoan.active);
+        assertFalse(closedLoan.expired);
+        assertEq(closedLoan.principals[0], 100e18);
+        assertEq(closedLoan.principals[1], 50e18);
+
+        IEdenLendingFacet.LoanView[] memory loans =
+            IEdenLendingFacet(address(diamond)).getLoansByBorrower(alice);
+        assertEq(loans.length, 2);
+        assertEq(loans[1].loanId, secondLoan);
+        assertTrue(loans[1].active);
+
+        IEdenLendingFacet.LoanView[] memory activeLoans =
+            IEdenLendingFacet(address(diamond)).getActiveLoansByBorrower(alice);
+        assertEq(activeLoans.length, 1);
+        assertEq(activeLoans[0].loanId, secondLoan);
+    }
+
     function test_Borrow_RevertsOnDurationTierAndInvariantFailure() public {
         vm.prank(alice);
         vm.expectRevert(
@@ -385,6 +443,45 @@ contract LendingFacetTest is Test {
             )
         );
         IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 2 days);
+    }
+
+    function test_LendingPreviews_ReturnExpectedBorrowRepayAndExtendShapes() public {
+        IEdenLendingFacet.BorrowPreview memory borrowPreview =
+            IEdenLendingFacet(address(diamond)).previewBorrow(1, 2 * UNIT, 3 days);
+        assertEq(borrowPreview.basketId, 1);
+        assertEq(borrowPreview.collateralUnits, 2 * UNIT);
+        assertEq(borrowPreview.duration, 3 days);
+        assertEq(borrowPreview.assets.length, 2);
+        assertEq(borrowPreview.assets[0], address(eve));
+        assertEq(borrowPreview.assets[1], address(alt));
+        assertEq(borrowPreview.principals[0], 200e18);
+        assertEq(borrowPreview.principals[1], 100e18);
+        assertEq(borrowPreview.feeNative, 0.02 ether);
+        assertEq(borrowPreview.maturity, uint40(block.timestamp + 3 days));
+        assertEq(borrowPreview.resultingLockedCollateral, 2 * UNIT);
+        assertTrue(borrowPreview.invariantSatisfied);
+
+        vm.prank(alice);
+        uint256 loanId =
+            IEdenLendingFacet(address(diamond)).borrow{ value: 0.02 ether }(1, 2 * UNIT, 3 days);
+
+        IEdenLendingFacet.RepayPreview memory repayPreview =
+            IEdenLendingFacet(address(diamond)).previewRepay(loanId);
+        assertEq(repayPreview.loanId, loanId);
+        assertEq(repayPreview.assets.length, 2);
+        assertEq(repayPreview.principals[0], 200e18);
+        assertEq(repayPreview.principals[1], 100e18);
+        assertEq(repayPreview.unlockedCollateralUnits, 2 * UNIT);
+
+        IEdenLendingFacet.ExtendPreview memory extendPreview =
+            IEdenLendingFacet(address(diamond)).previewExtend(loanId, 3 days);
+        assertEq(extendPreview.loanId, loanId);
+        assertEq(extendPreview.addedDuration, 3 days);
+        assertEq(
+            extendPreview.newMaturity,
+            LendingHarnessFacet(address(diamond)).getLoan(loanId).maturity + 3 days
+        );
+        assertEq(extendPreview.feeNative, 0.02 ether);
     }
 
     function test_Repay_UnlocksCollateralAndPreservesLoanHistory() public {
@@ -523,30 +620,42 @@ contract LendingFacetTest is Test {
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](23);
+        bytes4[] memory selectors = new bytes4[](35);
         selectors[0] = IEdenLendingFacet.borrow.selector;
         selectors[1] = IEdenLendingFacet.repay.selector;
         selectors[2] = IEdenLendingFacet.extend.selector;
         selectors[3] = IEdenLendingFacet.recoverExpired.selector;
         selectors[4] = IEdenLendingFacet.configureLending.selector;
         selectors[5] = IEdenLendingFacet.configureBorrowFeeTiers.selector;
-        selectors[6] = IEdenStEVEFacet.onStEVETransfer.selector;
-        selectors[7] = LendingHarnessFacet.setTreasury.selector;
-        selectors[8] = LendingHarnessFacet.setBasket.selector;
-        selectors[9] = LendingHarnessFacet.mintReceiptUnits.selector;
-        selectors[10] = LendingHarnessFacet.setVaultBalance.selector;
-        selectors[11] = LendingHarnessFacet.getLoan.selector;
-        selectors[12] = LendingHarnessFacet.getLockedCollateral.selector;
-        selectors[13] = LendingHarnessFacet.getOutstandingPrincipal.selector;
-        selectors[14] = LendingHarnessFacet.getBorrowFeeTier.selector;
-        selectors[15] = LendingHarnessFacet.getBorrowFeeTierCount.selector;
-        selectors[16] = LendingHarnessFacet.getLiquidBalance.selector;
-        selectors[17] = LendingHarnessFacet.getLockedBalance.selector;
-        selectors[18] = LendingHarnessFacet.getBorrowerLoanIds.selector;
-        selectors[19] = LendingHarnessFacet.getLoanClosed.selector;
-        selectors[20] = LendingHarnessFacet.getLoanClosedAt.selector;
-        selectors[21] = LendingHarnessFacet.getLoanCloseReason.selector;
-        selectors[22] = LendingHarnessFacet.getLoanCreatedAt.selector;
+        selectors[6] = IEdenLendingFacet.loanCount.selector;
+        selectors[7] = IEdenLendingFacet.borrowerLoanCount.selector;
+        selectors[8] = IEdenLendingFacet.getLoanView.selector;
+        selectors[9] = IEdenLendingFacet.getLoanIdsByBorrower.selector;
+        selectors[10] = IEdenLendingFacet.getActiveLoanIdsByBorrower.selector;
+        selectors[11] = IEdenLendingFacet.getLoansByBorrower.selector;
+        selectors[12] = IEdenLendingFacet.getActiveLoansByBorrower.selector;
+        selectors[13] = IEdenLendingFacet.getLoanIdsByBorrowerPaginated.selector;
+        selectors[14] = IEdenLendingFacet.getActiveLoanIdsByBorrowerPaginated.selector;
+        selectors[15] = IEdenLendingFacet.previewBorrow.selector;
+        selectors[16] = IEdenLendingFacet.previewRepay.selector;
+        selectors[17] = IEdenLendingFacet.previewExtend.selector;
+        selectors[18] = IEdenStEVEFacet.onStEVETransfer.selector;
+        selectors[19] = LendingHarnessFacet.setTreasury.selector;
+        selectors[20] = LendingHarnessFacet.setBasket.selector;
+        selectors[21] = LendingHarnessFacet.mintReceiptUnits.selector;
+        selectors[22] = LendingHarnessFacet.setVaultBalance.selector;
+        selectors[23] = LendingHarnessFacet.getLoan.selector;
+        selectors[24] = LendingHarnessFacet.getLockedCollateral.selector;
+        selectors[25] = LendingHarnessFacet.getOutstandingPrincipal.selector;
+        selectors[26] = LendingHarnessFacet.getBorrowFeeTier.selector;
+        selectors[27] = LendingHarnessFacet.getBorrowFeeTierCount.selector;
+        selectors[28] = LendingHarnessFacet.getLiquidBalance.selector;
+        selectors[29] = LendingHarnessFacet.getLockedBalance.selector;
+        selectors[30] = LendingHarnessFacet.getBorrowerLoanIds.selector;
+        selectors[31] = LendingHarnessFacet.getLoanClosed.selector;
+        selectors[32] = LendingHarnessFacet.getLoanClosedAt.selector;
+        selectors[33] = LendingHarnessFacet.getLoanCloseReason.selector;
+        selectors[34] = LendingHarnessFacet.getLoanCreatedAt.selector;
 
         bytes4[] memory extras = new bytes4[](3);
         extras[0] = LendingHarnessFacet.getEffectiveBalance.selector;
