@@ -407,6 +407,47 @@ contract StEVEFacetTest is Test {
         assertEq(breakdown[1].reward, BASE_REWARD);
     }
 
+    function test_RewardViews_MonotonicBreakdownAndClaimConsistency() public {
+        StEVEHarnessFacet(address(diamond)).mintStEve(address(token), alice, 100e18);
+        StEVEHarnessFacet(address(diamond)).mintStEve(address(token), bob, 300e18);
+        _fundRewards(BASE_REWARD * 3);
+
+        vm.warp(block.timestamp + (2 * DAY) + 1);
+
+        uint256 throughEpoch0 =
+            IEdenStEVEFacet(address(diamond)).claimableRewardsThroughEpoch(alice, 0);
+        uint256 throughEpoch1 =
+            IEdenStEVEFacet(address(diamond)).claimableRewardsThroughEpoch(alice, 1);
+        uint256 totalClaimable = IEdenStEVEFacet(address(diamond)).claimableRewards(alice);
+
+        assertEq(throughEpoch0, BASE_REWARD / 4);
+        assertEq(throughEpoch1, BASE_REWARD / 2);
+        assertEq(totalClaimable, throughEpoch1);
+        assertLe(throughEpoch0, throughEpoch1);
+
+        IEdenStEVEFacet.RewardPreview memory preview =
+            IEdenStEVEFacet(address(diamond)).previewClaimRewards(alice);
+        assertEq(preview.fromEpoch, 0);
+        assertEq(preview.toEpoch, 1);
+        assertEq(preview.totalClaimable, totalClaimable);
+
+        IEdenStEVEFacet.RewardEpochBreakdown[] memory breakdown =
+            IEdenStEVEFacet(address(diamond)).getRewardEpochBreakdown(alice, 0, 1);
+        uint256 summedRewards;
+        for (uint256 i = 0; i < breakdown.length; i++) {
+            summedRewards += breakdown[i].reward;
+            assertEq(breakdown[i].reward, BASE_REWARD / 4);
+            assertEq(breakdown[i].userTwab, 100e18);
+            assertEq(breakdown[i].totalTwab, 400e18);
+        }
+        assertEq(summedRewards, totalClaimable);
+
+        vm.prank(alice);
+        uint256 claimed = IEdenStEVEFacet(address(diamond)).claimRewards();
+        assertEq(claimed, totalClaimable);
+        assertEq(StEVEHarnessFacet(address(diamond)).getLastClaimedEpoch(alice), 2);
+    }
+
     function test_ReserveManagement_FundAndOverrideViews() public {
         _fundRewards(500e18);
         assertEq(IEdenStEVEFacet(address(diamond)).rewardReserveBalance(), 500e18);
