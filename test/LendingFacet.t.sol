@@ -410,6 +410,37 @@ contract LendingFacetTest is Test {
         assertEq(activeLoans[0].loanId, secondLoan);
     }
 
+    function test_LoanView_ExpiredStateAndPaginationOutOfBoundsBehaveCorrectly() public {
+        vm.prank(alice);
+        uint256 loanId =
+            IEdenLendingFacet(address(diamond)).borrow{ value: 0.2 ether }(1, UNIT, 2 days);
+
+        vm.warp(block.timestamp + 2 days + 1);
+
+        IEdenLendingFacet.LoanView memory loanView =
+            IEdenLendingFacet(address(diamond)).getLoanView(loanId);
+        assertEq(loanView.loanId, loanId);
+        assertFalse(loanView.active);
+        assertTrue(loanView.expired);
+        assertEq(loanView.closedAt, 0);
+        assertEq(loanView.closeReason, 0);
+        assertEq(loanView.extensionFeeNative, 0.2 ether);
+        assertEq(loanView.principals[0], 100e18);
+        assertEq(loanView.principals[1], 50e18);
+
+        uint256[] memory activeLoanIds =
+            IEdenLendingFacet(address(diamond)).getActiveLoanIdsByBorrower(alice);
+        assertEq(activeLoanIds.length, 0);
+
+        uint256[] memory paginated =
+            IEdenLendingFacet(address(diamond)).getLoanIdsByBorrowerPaginated(alice, 1, 1);
+        assertEq(paginated.length, 0);
+
+        uint256[] memory activePaginated =
+            IEdenLendingFacet(address(diamond)).getActiveLoanIdsByBorrowerPaginated(alice, 0, 1);
+        assertEq(activePaginated.length, 0);
+    }
+
     function test_Borrow_RevertsOnDurationTierAndInvariantFailure() public {
         vm.prank(alice);
         vm.expectRevert(
