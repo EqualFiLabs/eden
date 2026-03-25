@@ -57,25 +57,35 @@ contract EdenAdminFacet is IEdenAdminFacet {
             LibEdenStorage.layout().basketMetadata[basketId];
         metadata.uri = uri;
         metadata.basketType = basketType;
+        emit BasketMetadataUpdated(basketId, uri, basketType);
     }
 
     function setProtocolURI(
         string calldata uri
     ) external onlyTimelock {
-        LibEdenStorage.layout().protocolURI = uri;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        string memory oldURI = store.protocolURI;
+        store.protocolURI = uri;
+        emit ProtocolURIUpdated(oldURI, uri);
     }
 
     function setContractVersion(
         string calldata version
     ) external onlyTimelock {
-        LibEdenStorage.layout().contractVersion = version;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        string memory oldVersion = store.contractVersion;
+        store.contractVersion = version;
+        emit ContractVersionUpdated(oldVersion, version);
     }
 
     function setFacetVersion(
         address facet,
         string calldata version
     ) external onlyTimelock {
-        LibEdenStorage.layout().facetVersions[facet] = version;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        string memory oldVersion = store.facetVersions[facet];
+        store.facetVersions[facet] = version;
+        emit FacetVersionUpdated(facet, oldVersion, version);
     }
 
     function setTreasuryFeeBps(

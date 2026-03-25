@@ -69,5 +69,9 @@ interface IEdenEvents {
     );
 
     event ProtocolFeeSplitUpdated(uint16 oldBps, uint16 newBps);
+    event BasketMetadataUpdated(uint256 indexed basketId, string uri, uint8 basketType);
+    event ProtocolURIUpdated(string oldURI, string newURI);
+    event ContractVersionUpdated(string oldVersion, string newVersion);
+    event FacetVersionUpdated(address indexed facet, string oldVersion, string newVersion);
     event FacetFrozen(address indexed facet);
 }

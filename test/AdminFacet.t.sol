@@ -139,6 +139,10 @@ contract MockFlashReceiver is IEdenFlashReceiver {
 
 contract AdminFacetTest is Test {
     event ProtocolFeeSplitUpdated(uint16 oldBps, uint16 newBps);
+    event BasketMetadataUpdated(uint256 indexed basketId, string uri, uint8 basketType);
+    event ProtocolURIUpdated(string oldURI, string newURI);
+    event ContractVersionUpdated(string oldVersion, string newVersion);
+    event FacetVersionUpdated(address indexed facet, string oldVersion, string newVersion);
 
     uint256 internal constant UNIT = 1e18;
 
@@ -338,6 +342,43 @@ contract AdminFacetTest is Test {
         vm.prank(timelock);
         vm.expectRevert(abi.encodeWithSelector(EdenAdminFacet.UnknownBasket.selector, uint256(999)));
         IEdenAdminFacet(address(diamond)).setBasketMetadata(999, "ipfs://missing", 1);
+    }
+
+    function test_Admin_MetadataVersionSetters_EmitEvents() public {
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit BasketMetadataUpdated(1, "ipfs://basket-one", 7);
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setBasketMetadata(1, "ipfs://basket-one", 7);
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit ProtocolURIUpdated("", "ipfs://protocol");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setProtocolURI("ipfs://protocol");
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit ContractVersionUpdated("", "2.0.0");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setContractVersion("2.0.0");
+
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit FacetVersionUpdated(address(adminFacet), "", "admin-v2");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setFacetVersion(address(adminFacet), "admin-v2");
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit ProtocolURIUpdated("ipfs://protocol", "ipfs://protocol-v2");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setProtocolURI("ipfs://protocol-v2");
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit ContractVersionUpdated("2.0.0", "2.1.0");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setContractVersion("2.1.0");
+
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit FacetVersionUpdated(address(adminFacet), "admin-v2", "admin-v3");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setFacetVersion(address(adminFacet), "admin-v3");
     }
 
     function test_Admin_PauseBlocksMintBurnFlashAndBorrow() public {
