@@ -67,7 +67,7 @@ contract EdenPortfolioFacet is EdenLendingFacet, IEdenPortfolioFacet {
 
     function getUserPortfolio(
         address user
-    ) external view returns (UserPortfolio memory portfolio) {
+    ) public view returns (UserPortfolio memory portfolio) {
         uint256[] memory basketIds = getUserBasketIds(user);
         uint256 basketLen = basketIds.length;
         uint256[] memory loanIds = getLoanIdsByBorrower(user);
