@@ -36,7 +36,7 @@ contract DeployScriptTest is Test {
         DeployEden.Deployment memory deployment = deployer.run();
 
         assertEq(IDiamondLoupe(address(deployment.diamond)).facetAddresses().length, 7);
-        assertEq(IEdenStEVEFacet(address(deployment.diamond)).rewardReserveBalance(), 1_500_000_000e18);
+        assertEq(IEdenStEVEFacet(address(deployment.diamond)).rewardReserveBalance(), 2_000_000_000e18);
         assertEq(IEdenStEVEFacet(address(deployment.diamond)).currentEpoch(), 0);
 
         LibEdenStorage.Basket memory basket = IEdenViewFacet(address(deployment.diamond)).getBasket(0);

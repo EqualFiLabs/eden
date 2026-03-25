@@ -521,6 +521,24 @@ contract LendingFacetTest is Test {
         assertEq(extendPreview.feeNative, 0.02 ether);
     }
 
+    function test_PreviewBorrow_InvariantSatisfiedReflectsVaultState() public {
+        IEdenLendingFacet.BorrowPreview memory healthyPreview =
+            IEdenLendingFacet(address(diamond)).previewBorrow(1, UNIT, 2 days);
+        assertTrue(healthyPreview.invariantSatisfied);
+        assertEq(healthyPreview.feeNative, 0.2 ether);
+        assertEq(healthyPreview.principals[0], 100e18);
+        assertEq(healthyPreview.principals[1], 50e18);
+
+        LendingHarnessFacet(address(diamond)).setVaultBalance(1, address(eve), 350e18);
+        LendingHarnessFacet(address(diamond)).setVaultBalance(1, address(alt), 175e18);
+
+        IEdenLendingFacet.BorrowPreview memory brokenPreview =
+            IEdenLendingFacet(address(diamond)).previewBorrow(1, UNIT, 2 days);
+        assertFalse(brokenPreview.invariantSatisfied);
+        assertEq(brokenPreview.feeNative, 0.2 ether);
+        assertEq(brokenPreview.maturity, uint40(block.timestamp + 2 days));
+    }
+
     function test_Repay_UnlocksCollateralAndPreservesLoanHistory() public {
         vm.prank(alice);
         uint256 loanId =
