@@ -17,6 +17,14 @@ import { BasketToken } from "src/tokens/BasketToken.sol";
 import { StEVEToken } from "src/tokens/StEVEToken.sol";
 
 contract BatchConvenienceMockERC20 is ERC20 {
+    address public callbackTarget;
+    bytes public callbackData;
+    bool public callbackOnTransfer;
+    bool public callbackOnTransferFrom;
+    bool public callbackAttempted;
+    bool public callbackSucceeded;
+    bool internal inCallback;
+
     constructor(
         string memory name_,
         string memory symbol_
@@ -27,6 +35,76 @@ contract BatchConvenienceMockERC20 is ERC20 {
         uint256 amount
     ) external {
         _mint(to, amount);
+    }
+
+    function configureCallback(
+        address target,
+        bytes calldata data,
+        bool onTransfer,
+        bool onTransferFrom
+    ) external {
+        callbackTarget = target;
+        callbackData = data;
+        callbackOnTransfer = onTransfer;
+        callbackOnTransferFrom = onTransferFrom;
+        callbackAttempted = false;
+        callbackSucceeded = false;
+    }
+
+    function clearCallback() external {
+        callbackTarget = address(0);
+        delete callbackData;
+        callbackOnTransfer = false;
+        callbackOnTransferFrom = false;
+        callbackAttempted = false;
+        callbackSucceeded = false;
+    }
+
+    function transfer(address to, uint256 value) public override returns (bool) {
+        bool success = super.transfer(to, value);
+        if (callbackOnTransfer) {
+            _attemptCallback();
+        }
+        return success;
+    }
+
+    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
+        bool success = super.transferFrom(from, to, value);
+        if (callbackOnTransferFrom) {
+            _attemptCallback();
+        }
+        return success;
+    }
+
+    function _attemptCallback() internal {
+        if (inCallback || callbackTarget == address(0)) return;
+        inCallback = true;
+        callbackAttempted = true;
+        (callbackSucceeded,) = callbackTarget.call(callbackData);
+        inCallback = false;
+    }
+}
+
+contract BatchReenteringTreasury {
+    address public target;
+    bytes public data;
+    bool public attempted;
+    bool public succeeded;
+    bool internal inCallback;
+
+    function configure(address target_, bytes calldata data_) external {
+        target = target_;
+        data = data_;
+        attempted = false;
+        succeeded = false;
+    }
+
+    receive() external payable {
+        if (inCallback || target == address(0)) return;
+        inCallback = true;
+        attempted = true;
+        (succeeded,) = target.call(data);
+        inCallback = false;
     }
 }
 
@@ -166,11 +244,11 @@ contract BatchConvenienceTest is Test {
 
     address internal owner = makeAddr("owner");
     address internal timelock = makeAddr("timelock");
-    address internal treasury = makeAddr("treasury");
     address internal alice = makeAddr("alice");
 
     EdenDiamond internal diamond;
     BatchConvenienceHarnessFacet internal batchFacet;
+    BatchReenteringTreasury internal treasury;
     BatchConvenienceMockERC20 internal rewardToken;
     BatchConvenienceMockERC20 internal altToken;
     StEVEToken internal stEveToken;
@@ -179,6 +257,7 @@ contract BatchConvenienceTest is Test {
     function setUp() public {
         diamond = new EdenDiamond(owner, timelock);
         batchFacet = new BatchConvenienceHarnessFacet();
+        treasury = new BatchReenteringTreasury();
         rewardToken = new BatchConvenienceMockERC20("EVE", "EVE");
         altToken = new BatchConvenienceMockERC20("ALT", "ALT");
         stEveToken = new StEVEToken("stEVE", "stEVE", address(diamond));
@@ -187,7 +266,7 @@ contract BatchConvenienceTest is Test {
         vm.prank(owner);
         IDiamondCut(address(diamond)).diamondCut(_facetCuts(), address(0), "");
 
-        BatchConvenienceHarnessFacet(address(diamond)).setCoreConfig(treasury, 1000, 6000, 7500);
+        BatchConvenienceHarnessFacet(address(diamond)).setCoreConfig(address(treasury), 1000, 6000, 7500);
         _setUpSteveBasket();
         _setUpIndexBasket();
         _setUpRewards();
@@ -228,6 +307,25 @@ contract BatchConvenienceTest is Test {
         assertEq(BatchConvenienceHarnessFacet(address(diamond)).getRewardReserve(), reserveBefore);
         assertEq(BatchConvenienceHarnessFacet(address(diamond)).getLastClaimedEpoch(alice), 0);
         assertEq(stEveToken.balanceOf(alice), 1e18);
+    }
+
+    function test_ReentrancyGuard_ClaimAndMintStEVE_BlocksNestedBatchCall() public {
+        BatchConvenienceHarnessFacet(address(diamond)).setVaultBalance(0, address(rewardToken), 70e18);
+        vm.warp(block.timestamp + 1 days);
+
+        rewardToken.configureCallback(
+            address(diamond),
+            abi.encodeCall(IEdenBatchFacet.claimAndMintStEVE, (0, alice)),
+            true,
+            false
+        );
+
+        vm.prank(alice);
+        uint256 minted = IEdenBatchFacet(address(diamond)).claimAndMintStEVE(0, alice);
+
+        assertGt(minted, UNIT);
+        assertTrue(rewardToken.callbackAttempted());
+        assertFalse(rewardToken.callbackSucceeded());
     }
 
     function test_ExtendMany_ValidatesLengthsAndIsAtomic() public {
@@ -272,12 +370,12 @@ contract BatchConvenienceTest is Test {
         durations[0] = 1 days;
         durations[1] = 1 days;
 
-        uint256 treasuryBefore = treasury.balance;
+        uint256 treasuryBefore = address(treasury).balance;
 
         vm.prank(alice);
         IEdenBatchFacet(address(diamond)).extendMany{ value: 0.22 ether }(loanIds, durations);
 
-        assertEq(treasury.balance - treasuryBefore, 0.22 ether);
+        assertEq(address(treasury).balance - treasuryBefore, 0.22 ether);
         assertEq(
             BatchConvenienceHarnessFacet(address(diamond)).getLoan(loanId0).maturity,
             maturity0Before + 1 days
@@ -286,6 +384,29 @@ contract BatchConvenienceTest is Test {
             BatchConvenienceHarnessFacet(address(diamond)).getLoan(loanId1).maturity,
             maturity1Before + 1 days
         );
+    }
+
+    function test_ReentrancyGuard_ExtendMany_BlocksNestedBatchCall() public {
+        (uint256 loanId0, uint256 loanId1) = _openTwoLoans();
+
+        uint256[] memory loanIds = new uint256[](2);
+        loanIds[0] = loanId0;
+        loanIds[1] = loanId1;
+        uint40[] memory durations = new uint40[](2);
+        durations[0] = 1 days;
+        durations[1] = 1 days;
+
+        uint256[] memory emptyLoanIds = new uint256[](0);
+        uint40[] memory emptyDurations = new uint40[](0);
+        treasury.configure(
+            address(diamond), abi.encodeCall(IEdenBatchFacet.extendMany, (emptyLoanIds, emptyDurations))
+        );
+
+        vm.prank(alice);
+        IEdenBatchFacet(address(diamond)).extendMany{ value: 0.22 ether }(loanIds, durations);
+
+        assertTrue(treasury.attempted());
+        assertFalse(treasury.succeeded());
     }
 
     function _setUpSteveBasket() internal {

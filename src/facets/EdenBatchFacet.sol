@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IEdenBatchFacet } from "src/interfaces/IEdenBatchFacet.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
@@ -27,6 +28,9 @@ contract EdenBatchFacet is EdenLendingFacet {
     error NativeValueUnsupported(uint256 actual);
     error ZeroClaimableRewards();
     error MintOutputTooLow(uint256 actual, uint256 minimum);
+    error InvalidUnits();
+    error InvalidPermitOwner(address actual, address expected);
+    error InvalidPermitSpender(address actual, address expected);
 
     struct SingleAssetMintQuote {
         uint256 unitsMinted;
@@ -34,6 +38,14 @@ contract EdenBatchFacet is EdenLendingFacet {
         uint256 baseDeposit;
         uint256 potBuyIn;
         uint256 fee;
+    }
+
+    struct BatchMintQuote {
+        address[] assets;
+        uint256[] baseDeposits;
+        uint256[] totalRequired;
+        uint256[] potBuyIns;
+        uint256[] feeAmounts;
     }
 
     function multicall(
@@ -112,6 +124,43 @@ contract EdenBatchFacet is EdenLendingFacet {
         }
 
         _forwardNativeFee(totalFee);
+    }
+
+    function mintWithPermit(
+        uint256 basketId,
+        uint256 units,
+        address to,
+        IEdenBatchFacet.PermitData[] calldata permits
+    ) external nonReentrant returns (uint256 minted) {
+        for (uint256 i = 0; i < permits.length; i++) {
+            _usePermit(permits[i], msg.sender);
+        }
+
+        return _batchMint(basketId, units, to, msg.sender);
+    }
+
+    function repayWithPermit(
+        uint256 loanId,
+        IEdenBatchFacet.PermitData[] calldata permits
+    ) external nonReentrant {
+        for (uint256 i = 0; i < permits.length; i++) {
+            _usePermit(permits[i], msg.sender);
+        }
+
+        _batchRepay(loanId, msg.sender);
+    }
+
+    function fundRewardsWithPermit(
+        uint256 amount,
+        IEdenBatchFacet.PermitData calldata permit
+    ) external nonReentrant onlyOwnerOrTimelock {
+        _usePermit(permit, msg.sender);
+
+        IERC20(_rewardToken()).safeTransferFrom(msg.sender, address(this), amount);
+
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        st.rewardReserve += amount;
+        emit RewardsFunded(amount, st.rewardReserve);
     }
 
     function _quoteSingleAssetMintFromInput(
@@ -195,6 +244,162 @@ contract EdenBatchFacet is EdenLendingFacet {
         uint256[] memory fees = new uint256[](1);
         fees[0] = quote.fee;
         emit Minted(basketId, claimant, quote.unitsMinted, deposited, fees);
+    }
+
+    function _batchMint(
+        uint256 basketId,
+        uint256 units,
+        address to,
+        address payer
+    ) internal basketExists(basketId) returns (uint256 minted) {
+        if (units == 0 || units % BATCH_UNIT_SCALE != 0) revert InvalidUnits();
+
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        LibEdenStorage.Basket storage basket = store.baskets[basketId];
+        if (basket.paused) revert BasketPaused(basketId);
+
+        BatchMintQuote memory quote = _previewBatchMintQuote(basketId, units);
+        _collectBatchMintInputs(quote, payer);
+
+        uint256 len = quote.assets.length;
+        for (uint256 i = 0; i < len; i++) {
+            address asset = quote.assets[i];
+            store.vaultBalances[basketId][asset] += quote.baseDeposits[i];
+
+            if (quote.potBuyIns[i] > 0) {
+                store.feePots[basketId][asset] += quote.potBuyIns[i];
+                emit FeePotAccrued(basketId, asset, quote.potBuyIns[i], FEE_POT_BUY_IN_SOURCE);
+            }
+
+            _distributeBatchFee(basketId, asset, quote.feeAmounts[i], MINT_FEE_SOURCE);
+        }
+
+        basket.totalUnits += units;
+        BasketToken(basket.token).mintIndexUnits(to, units);
+        LibUserBasketTracking.syncUserBasketPosition(to, basketId);
+
+        emit Minted(basketId, payer, units, quote.totalRequired, quote.feeAmounts);
+        return units;
+    }
+
+    function _batchRepay(
+        uint256 loanId,
+        address borrower
+    ) internal {
+        LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
+        if (borrower != loan.borrower) revert NotBorrower(borrower, loan.borrower);
+
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        LibEdenStorage.Basket storage basket = store.baskets[loan.basketId];
+        (address[] memory assets, uint256[] memory principals) =
+            _deriveLoanPrincipals(basket, loan.collateralUnits, loan.ltvBps);
+
+        uint256 len = assets.length;
+        for (uint256 i = 0; i < len; i++) {
+            address asset = assets[i];
+            uint256 principal = principals[i];
+            IERC20(asset).safeTransferFrom(borrower, address(this), principal);
+            store.vaultBalances[loan.basketId][asset] += principal;
+            lending.outstandingPrincipal[loan.basketId][asset] -= principal;
+        }
+
+        lending.lockedCollateralUnits[loan.basketId] -= loan.collateralUnits;
+
+        if (loan.basketId == store.steveBasketId) {
+            _moveLockedToCustodyLiquid(loan.borrower, address(this), loan.collateralUnits);
+        }
+
+        IERC20(basket.token).safeTransfer(loan.borrower, loan.collateralUnits);
+
+        lending.loanClosed[loanId] = true;
+        lending.loanClosedAt[loanId] = block.timestamp;
+        lending.loanCloseReason[loanId] = 1;
+        LibUserBasketTracking.syncUserBasketPosition(loan.borrower, loan.basketId);
+        emit LoanRepaid(loanId);
+    }
+
+    function _previewBatchMintQuote(
+        uint256 basketId,
+        uint256 units
+    ) internal view returns (BatchMintQuote memory quote) {
+        if (units == 0 || units % BATCH_UNIT_SCALE != 0) revert InvalidUnits();
+
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        LibEdenStorage.Basket storage basket = store.baskets[basketId];
+        uint256 len = basket.assets.length;
+        uint256 totalSupply = basket.totalUnits;
+
+        quote.assets = basket.assets;
+        quote.baseDeposits = new uint256[](len);
+        quote.totalRequired = new uint256[](len);
+        quote.potBuyIns = new uint256[](len);
+        quote.feeAmounts = new uint256[](len);
+
+        for (uint256 i = 0; i < len; i++) {
+            address asset = basket.assets[i];
+            uint256 baseDeposit;
+            uint256 potBuyIn;
+
+            if (totalSupply == 0) {
+                baseDeposit = Math.mulDiv(basket.bundleAmounts[i], units, BATCH_UNIT_SCALE);
+            } else {
+                uint256 economicBalance = _batchEconomicBalance(basketId, asset);
+                baseDeposit = Math.mulDiv(economicBalance, units, totalSupply, Math.Rounding.Ceil);
+                potBuyIn = Math.mulDiv(
+                    store.feePots[basketId][asset], units, totalSupply, Math.Rounding.Ceil
+                );
+            }
+
+            uint256 grossInput = baseDeposit + potBuyIn;
+            uint256 fee = Math.mulDiv(
+                grossInput, basket.mintFeeBps[i], BATCH_BASIS_POINTS, Math.Rounding.Ceil
+            );
+
+            quote.baseDeposits[i] = baseDeposit;
+            quote.potBuyIns[i] = potBuyIn;
+            quote.feeAmounts[i] = fee;
+            quote.totalRequired[i] = grossInput + fee;
+        }
+    }
+
+    function _collectBatchMintInputs(
+        BatchMintQuote memory quote,
+        address payer
+    ) internal {
+        uint256 len = quote.assets.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (quote.assets[i] == address(0)) {
+                revert NativeAssetUnsupported();
+            }
+        }
+
+        for (uint256 i = 0; i < len; i++) {
+            IERC20(quote.assets[i]).safeTransferFrom(payer, address(this), quote.totalRequired[i]);
+        }
+    }
+
+    function _usePermit(
+        IEdenBatchFacet.PermitData calldata permit,
+        address expectedOwner
+    ) internal {
+        if (permit.owner != expectedOwner) {
+            revert InvalidPermitOwner(permit.owner, expectedOwner);
+        }
+        if (permit.spender != address(this)) {
+            revert InvalidPermitSpender(permit.spender, address(this));
+        }
+
+        IERC20Permit(permit.token).permit(
+            permit.owner,
+            permit.spender,
+            permit.value,
+            permit.deadline,
+            permit.v,
+            permit.r,
+            permit.s
+        );
     }
 
     function _singleAssetMintRequirement(

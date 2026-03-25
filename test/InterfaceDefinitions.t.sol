@@ -26,6 +26,18 @@ contract InterfaceDefinitionsTest is Test {
             IEdenBatchFacet.claimAndMintStEVE.selector,
             bytes4(keccak256("claimAndMintStEVE(uint256,address)"))
         );
+        assertEq(
+            IEdenBatchFacet.mintWithPermit.selector,
+            bytes4(keccak256("mintWithPermit(uint256,uint256,address,(address,address,address,uint256,uint256,uint8,bytes32,bytes32)[])"))
+        );
+        assertEq(
+            IEdenBatchFacet.repayWithPermit.selector,
+            bytes4(keccak256("repayWithPermit(uint256,(address,address,address,uint256,uint256,uint8,bytes32,bytes32)[])"))
+        );
+        assertEq(
+            IEdenBatchFacet.fundRewardsWithPermit.selector,
+            bytes4(keccak256("fundRewardsWithPermit(uint256,(address,address,address,uint256,uint256,uint8,bytes32,bytes32))"))
+        );
     }
 
     function test_ExpandedInterfaces_ExposePreviewAndLifecycleSelectors() public pure {
