@@ -137,30 +137,12 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         uint40 addedDuration
     ) external payable nonReentrant {
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
-        LibLendingStorage.Loan storage loan = lending.loans[loanId];
-        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
-        if (msg.sender != loan.borrower) revert NotBorrower(msg.sender, loan.borrower);
-        if (block.timestamp > loan.maturity) revert LoanExpired(loanId, loan.maturity);
+        (uint40 newMaturity, uint256 feeNative) =
+            _validateAndQuoteExtension(lending, loanId, addedDuration, msg.sender);
+        _requireNativeFee(feeNative);
 
-        LibLendingStorage.LendingConfig memory config = lending.lendingConfigs[loan.basketId];
-        if (addedDuration == 0 || config.maxDuration == 0) {
-            revert InvalidDuration(addedDuration, config.minDuration, config.maxDuration);
-        }
-
-        uint256 newMaturity = uint256(loan.maturity) + addedDuration;
-        uint256 maxAllowedMaturity = block.timestamp + config.maxDuration;
-        if (newMaturity > maxAllowedMaturity) {
-            revert InvalidDuration(uint256(addedDuration), config.minDuration, config.maxDuration);
-        }
-
-        LibLendingStorage.BorrowFeeTier memory tier = _selectBorrowFeeTier(
-            lending.borrowFeeTiers[loan.basketId], loan.basketId, loan.collateralUnits
-        );
-        _requireNativeFee(tier.flatFeeNative);
-
-        loan.maturity = uint40(newMaturity);
-        _forwardNativeFee(tier.flatFeeNative);
-        emit LoanExtended(loanId, loan.maturity, tier.flatFeeNative);
+        _applyExtension(lending, loanId, newMaturity, feeNative);
+        _forwardNativeFee(feeNative);
     }
 
     function recoverExpired(
@@ -438,28 +420,14 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         uint40 addedDuration
     ) external view returns (ExtendPreview memory preview) {
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
-        LibLendingStorage.Loan storage loan = lending.loans[loanId];
-        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
-        if (block.timestamp > loan.maturity) revert LoanExpired(loanId, loan.maturity);
-
-        LibLendingStorage.LendingConfig memory config = lending.lendingConfigs[loan.basketId];
-        if (addedDuration == 0 || config.maxDuration == 0) {
-            revert InvalidDuration(addedDuration, config.minDuration, config.maxDuration);
-        }
-
-        uint256 newMaturity = uint256(loan.maturity) + addedDuration;
-        uint256 maxAllowedMaturity = block.timestamp + config.maxDuration;
-        if (newMaturity > maxAllowedMaturity) {
-            revert InvalidDuration(uint256(addedDuration), config.minDuration, config.maxDuration);
-        }
+        (uint40 newMaturity, uint256 feeNative) =
+            _validateAndQuoteExtension(lending, loanId, addedDuration, address(0));
 
         preview = ExtendPreview({
             loanId: loanId,
             addedDuration: addedDuration,
             newMaturity: uint40(newMaturity),
-            feeNative: _selectBorrowFeeTier(
-                lending.borrowFeeTiers[loan.basketId], loan.basketId, loan.collateralUnits
-            ).flatFeeNative
+            feeNative: feeNative
         });
     }
 
@@ -491,6 +459,46 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
             ltvBps: LibLendingStorage.DEFAULT_LTV_BPS,
             maturity: maturity
         });
+    }
+
+    function _validateAndQuoteExtension(
+        LibLendingStorage.LendingStorage storage lending,
+        uint256 loanId,
+        uint40 addedDuration,
+        address expectedBorrower
+    ) internal view returns (uint40 newMaturity, uint256 feeNative) {
+        LibLendingStorage.Loan storage loan = lending.loans[loanId];
+        if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);
+        if (expectedBorrower != address(0) && expectedBorrower != loan.borrower) {
+            revert NotBorrower(expectedBorrower, loan.borrower);
+        }
+        if (block.timestamp > loan.maturity) revert LoanExpired(loanId, loan.maturity);
+
+        LibLendingStorage.LendingConfig memory config = lending.lendingConfigs[loan.basketId];
+        if (addedDuration == 0 || config.maxDuration == 0) {
+            revert InvalidDuration(addedDuration, config.minDuration, config.maxDuration);
+        }
+
+        uint256 extendedMaturity = uint256(loan.maturity) + addedDuration;
+        uint256 maxAllowedMaturity = block.timestamp + config.maxDuration;
+        if (extendedMaturity > maxAllowedMaturity) {
+            revert InvalidDuration(uint256(addedDuration), config.minDuration, config.maxDuration);
+        }
+
+        newMaturity = uint40(extendedMaturity);
+        feeNative = _selectBorrowFeeTier(
+            lending.borrowFeeTiers[loan.basketId], loan.basketId, loan.collateralUnits
+        ).flatFeeNative;
+    }
+
+    function _applyExtension(
+        LibLendingStorage.LendingStorage storage lending,
+        uint256 loanId,
+        uint40 newMaturity,
+        uint256 feeNative
+    ) internal {
+        lending.loans[loanId].maturity = newMaturity;
+        emit LoanExtended(loanId, newMaturity, feeNative);
     }
 
     function _executeBorrowPayouts(

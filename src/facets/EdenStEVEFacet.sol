@@ -35,20 +35,7 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
     }
 
     function claimRewards() external nonReentrant returns (uint256 totalClaimed) {
-        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
-        (uint256 startEpoch, uint256 endEpoch, uint256 claimable) =
-            _previewClaimRange(msg.sender, _latestCompletedEpoch(st));
-        if (claimable == 0) return 0;
-
-        totalClaimed = claimable;
-        st.rewardReserve -= totalClaimed;
-        st.lastClaimedEpoch[msg.sender] = endEpoch + 1;
-
-        if (totalClaimed > 0) {
-            IERC20(_rewardToken()).safeTransfer(msg.sender, totalClaimed);
-        }
-
-        emit RewardsClaimed(msg.sender, startEpoch, endEpoch, totalClaimed);
+        (totalClaimed,,) = _claimRewards(msg.sender, true);
     }
 
     function configureRewards(
@@ -381,6 +368,32 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
         if (totalTwab == 0) return 0;
 
         return Math.mulDiv(rewardForEpoch(epoch), userTwab, totalTwab);
+    }
+
+    function _claimRewards(
+        address user,
+        bool transferToUser
+    ) internal returns (uint256 totalClaimed, uint256 startEpoch, uint256 endEpoch) {
+        LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
+        startEpoch = st.lastClaimedEpoch[user];
+        endEpoch = startEpoch == 0 ? 0 : startEpoch - 1;
+        if (st.totalEpochs == 0 || st.epochDuration == 0 || currentEpoch() == 0) {
+            return (0, startEpoch, endEpoch);
+        }
+
+        (startEpoch, endEpoch, totalClaimed) = _previewClaimRange(user, _latestCompletedEpoch(st));
+        if (totalClaimed == 0) {
+            return (0, startEpoch, endEpoch);
+        }
+
+        st.rewardReserve -= totalClaimed;
+        st.lastClaimedEpoch[user] = endEpoch + 1;
+
+        if (transferToUser) {
+            IERC20(_rewardToken()).safeTransfer(user, totalClaimed);
+        }
+
+        emit RewardsClaimed(user, startEpoch, endEpoch, totalClaimed);
     }
 
     function _previewClaimRange(
