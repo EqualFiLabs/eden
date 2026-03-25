@@ -69,6 +69,29 @@ interface IEdenEvents {
     );
 
     event ProtocolFeeSplitUpdated(uint16 oldBps, uint16 newBps);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event TimelockUpdated(address indexed oldTimelock, address indexed newTimelock);
+    event BasketPausedUpdated(uint256 indexed basketId, bool paused);
+    event BasketFeeConfigUpdated(
+        uint256 indexed basketId, uint16[] mintFeeBps, uint16[] burnFeeBps, uint16 flashFeeBps
+    );
+    event BasketCreationFeeUpdated(uint256 oldFee, uint256 newFee);
+    event LendingConfigUpdated(
+        uint256 indexed basketId, uint40 minDuration, uint40 maxDuration, uint16 ltvBps
+    );
+    event BorrowFeeTiersUpdated(
+        uint256 indexed basketId, uint256[] minCollateralUnits, uint256[] flatFeeNative
+    );
+    event RewardConfigUpdated(
+        uint256 genesisTimestamp,
+        uint256 epochDuration,
+        uint256 halvingInterval,
+        uint256 maxPeriods,
+        uint256 baseRewardPerEpoch,
+        uint256 totalEpochs,
+        uint256 maxRewardOverride
+    );
+    event RewardOverrideUpdated(uint256 oldRate, uint256 newRate);
     event BasketMetadataUpdated(uint256 indexed basketId, string uri, uint8 basketType);
     event ProtocolURIUpdated(string oldURI, string newURI);
     event ContractVersionUpdated(string oldVersion, string newVersion);

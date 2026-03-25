@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Script } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { EdenDiamond } from "src/EdenDiamond.sol";
 import { DiamondLoupeFacet } from "src/facets/DiamondLoupeFacet.sol";
 import { EdenCoreFacet } from "src/facets/EdenCoreFacet.sol";
@@ -32,9 +33,11 @@ contract DeployEden is Script {
     uint256 internal constant TOTAL_EPOCHS = 548;
     uint256 internal constant EPOCH_DURATION = 1 days;
     uint256 internal constant INITIAL_REWARD_RESERVE = 2_000_000_000e18;
+    uint256 internal constant TIMELOCK_DELAY_SECONDS = 7 days;
 
     struct Deployment {
         EdenDiamond diamond;
+        TimelockController timelockController;
         EdenCoreFacet coreFacet;
         EdenStEVEFacet stEveFacet;
         EdenLendingFacet lendingFacet;
@@ -48,14 +51,14 @@ contract DeployEden is Script {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address broadcaster = vm.addr(deployerKey);
         address owner = vm.envOr("EDEN_OWNER", broadcaster);
-        address timelock = vm.envOr("EDEN_TIMELOCK", broadcaster);
+        address configuredTimelock = vm.envOr("EDEN_TIMELOCK", address(0));
         address treasury = vm.envOr("EDEN_TREASURY", broadcaster);
         address eve = vm.envAddress("EDEN_EVE_TOKEN");
         uint256 genesisTimestamp = vm.envOr("EDEN_GENESIS_TIMESTAMP", block.timestamp);
 
         vm.startBroadcast(deployerKey);
 
-        deployment = _deploySystem(owner, timelock);
+        deployment = _deploySystem(owner, configuredTimelock);
         _registerFacets(deployment);
         _initializeProtocol(deployment.diamond, eve, treasury, genesisTimestamp);
 
@@ -64,9 +67,22 @@ contract DeployEden is Script {
 
     function _deploySystem(
         address owner,
-        address timelock
+        address configuredTimelock
     ) internal returns (Deployment memory deployment) {
-        deployment.diamond = new EdenDiamond(owner, timelock);
+        address timelockAddress = configuredTimelock;
+        if (timelockAddress.code.length == 0) {
+            address[] memory proposers = new address[](1);
+            proposers[0] = owner;
+            address[] memory executors = new address[](1);
+            executors[0] = owner;
+            deployment.timelockController =
+                new TimelockController(TIMELOCK_DELAY_SECONDS, proposers, executors, owner);
+            timelockAddress = address(deployment.timelockController);
+        } else {
+            deployment.timelockController = TimelockController(payable(timelockAddress));
+        }
+
+        deployment.diamond = new EdenDiamond(owner, timelockAddress);
         deployment.coreFacet = new EdenCoreFacet();
         deployment.stEveFacet = new EdenStEVEFacet();
         deployment.lendingFacet = new EdenLendingFacet();
@@ -124,6 +140,7 @@ contract DeployEden is Script {
 
         IERC20(eve).approve(address(diamond), INITIAL_REWARD_RESERVE);
         IEdenStEVEFacet(address(diamond)).fundRewards(INITIAL_REWARD_RESERVE);
+        IEdenAdminFacet(address(diamond)).completeBootstrap();
     }
 
     function _cut(
@@ -169,16 +186,17 @@ contract DeployEden is Script {
     }
 
     function _adminSelectors() internal pure returns (bytes4[] memory selectors) {
-        selectors = new bytes4[](9);
-        selectors[0] = IEdenAdminFacet.setIndexFees.selector;
-        selectors[1] = IEdenAdminFacet.setTreasuryFeeBps.selector;
-        selectors[2] = IEdenAdminFacet.setFeePotShareBps.selector;
-        selectors[3] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
-        selectors[4] = IEdenAdminFacet.setBasketCreationFee.selector;
-        selectors[5] = IEdenAdminFacet.setPaused.selector;
-        selectors[6] = IEdenAdminFacet.setTreasury.selector;
-        selectors[7] = IEdenAdminFacet.setTimelock.selector;
-        selectors[8] = IEdenAdminFacet.freezeFacet.selector;
+        selectors = new bytes4[](10);
+        selectors[0] = IEdenAdminFacet.completeBootstrap.selector;
+        selectors[1] = IEdenAdminFacet.setIndexFees.selector;
+        selectors[2] = IEdenAdminFacet.setTreasuryFeeBps.selector;
+        selectors[3] = IEdenAdminFacet.setFeePotShareBps.selector;
+        selectors[4] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
+        selectors[5] = IEdenAdminFacet.setBasketCreationFee.selector;
+        selectors[6] = IEdenAdminFacet.setPaused.selector;
+        selectors[7] = IEdenAdminFacet.setTreasury.selector;
+        selectors[8] = IEdenAdminFacet.setTimelock.selector;
+        selectors[9] = IEdenAdminFacet.freezeFacet.selector;
     }
 
     function _viewSelectors() internal pure returns (bytes4[] memory selectors) {

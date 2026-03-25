@@ -643,20 +643,21 @@ contract IntegrationTest is Test, IEdenEvents {
     }
 
     function _adminSelectors() internal pure returns (bytes4[] memory selectors) {
-        selectors = new bytes4[](13);
-        selectors[0] = IEdenAdminFacet.setBasketMetadata.selector;
-        selectors[1] = IEdenAdminFacet.setProtocolURI.selector;
-        selectors[2] = IEdenAdminFacet.setContractVersion.selector;
-        selectors[3] = IEdenAdminFacet.setFacetVersion.selector;
-        selectors[4] = IEdenAdminFacet.setIndexFees.selector;
-        selectors[5] = IEdenAdminFacet.setTreasuryFeeBps.selector;
-        selectors[6] = IEdenAdminFacet.setFeePotShareBps.selector;
-        selectors[7] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
-        selectors[8] = IEdenAdminFacet.setBasketCreationFee.selector;
-        selectors[9] = IEdenAdminFacet.setPaused.selector;
-        selectors[10] = IEdenAdminFacet.setTreasury.selector;
-        selectors[11] = IEdenAdminFacet.setTimelock.selector;
-        selectors[12] = IEdenAdminFacet.freezeFacet.selector;
+        selectors = new bytes4[](14);
+        selectors[0] = IEdenAdminFacet.completeBootstrap.selector;
+        selectors[1] = IEdenAdminFacet.setBasketMetadata.selector;
+        selectors[2] = IEdenAdminFacet.setProtocolURI.selector;
+        selectors[3] = IEdenAdminFacet.setContractVersion.selector;
+        selectors[4] = IEdenAdminFacet.setFacetVersion.selector;
+        selectors[5] = IEdenAdminFacet.setIndexFees.selector;
+        selectors[6] = IEdenAdminFacet.setTreasuryFeeBps.selector;
+        selectors[7] = IEdenAdminFacet.setFeePotShareBps.selector;
+        selectors[8] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
+        selectors[9] = IEdenAdminFacet.setBasketCreationFee.selector;
+        selectors[10] = IEdenAdminFacet.setPaused.selector;
+        selectors[11] = IEdenAdminFacet.setTreasury.selector;
+        selectors[12] = IEdenAdminFacet.setTimelock.selector;
+        selectors[13] = IEdenAdminFacet.freezeFacet.selector;
     }
 
     function _viewSelectors() internal pure returns (bytes4[] memory selectors) {

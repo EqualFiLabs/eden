@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import { IEdenEvents } from "./IEdenEvents.sol";
 
 interface IEdenAdminFacet is IEdenEvents {
+    function completeBootstrap() external;
+
     function setBasketMetadata(
         uint256 basketId,
         string calldata uri,

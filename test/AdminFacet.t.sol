@@ -139,6 +139,19 @@ contract MockFlashReceiver is IEdenFlashReceiver {
 
 contract AdminFacetTest is Test {
     event ProtocolFeeSplitUpdated(uint16 oldBps, uint16 newBps);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event TimelockUpdated(address indexed oldTimelock, address indexed newTimelock);
+    event BasketPausedUpdated(uint256 indexed basketId, bool paused);
+    event BasketFeeConfigUpdated(
+        uint256 indexed basketId, uint16[] mintFeeBps, uint16[] burnFeeBps, uint16 flashFeeBps
+    );
+    event BasketCreationFeeUpdated(uint256 oldFee, uint256 newFee);
+    event LendingConfigUpdated(
+        uint256 indexed basketId, uint40 minDuration, uint40 maxDuration, uint16 ltvBps
+    );
+    event BorrowFeeTiersUpdated(
+        uint256 indexed basketId, uint256[] minCollateralUnits, uint256[] flatFeeNative
+    );
     event BasketMetadataUpdated(uint256 indexed basketId, string uri, uint8 basketType);
     event ProtocolURIUpdated(string oldURI, string newURI);
     event ContractVersionUpdated(string oldVersion, string newVersion);
@@ -381,6 +394,49 @@ contract AdminFacetTest is Test {
         IEdenAdminFacet(address(diamond)).setFacetVersion(address(adminFacet), "admin-v3");
     }
 
+    function test_Admin_SettersAndLendingConfig_EmitEvents() public {
+        uint16[] memory mintFeeBps = _u16Array(100, 200);
+        uint16[] memory burnFeeBps = _u16Array(300, 400);
+
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit BasketFeeConfigUpdated(1, mintFeeBps, burnFeeBps, 500);
+        vm.prank(owner);
+        IEdenAdminFacet(address(diamond)).setIndexFees(1, mintFeeBps, burnFeeBps, 500);
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit BasketCreationFeeUpdated(0, 1 ether);
+        vm.prank(owner);
+        IEdenAdminFacet(address(diamond)).setBasketCreationFee(1 ether);
+
+        vm.expectEmit(true, true, false, true, address(diamond));
+        emit TreasuryUpdated(treasury, treasury2);
+        vm.prank(owner);
+        IEdenAdminFacet(address(diamond)).setTreasury(treasury2);
+
+        address newTimelock = makeAddr("newTimelock");
+        vm.expectEmit(true, true, false, true, address(diamond));
+        emit TimelockUpdated(timelock, newTimelock);
+        vm.prank(owner);
+        IEdenAdminFacet(address(diamond)).setTimelock(newTimelock);
+
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit BasketPausedUpdated(1, true);
+        vm.prank(owner);
+        IEdenAdminFacet(address(diamond)).setPaused(1, true);
+
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit LendingConfigUpdated(1, 1 days, 10 days, 10_000);
+        vm.prank(owner);
+        IEdenLendingFacet(address(diamond)).configureLending(1, 1 days, 10 days);
+
+        uint256[] memory tierMins = _u256Array(UNIT);
+        uint256[] memory tierFees = _u256Array(0.2 ether);
+        vm.expectEmit(true, false, false, true, address(diamond));
+        emit BorrowFeeTiersUpdated(1, tierMins, tierFees);
+        vm.prank(owner);
+        IEdenLendingFacet(address(diamond)).configureBorrowFeeTiers(1, tierMins, tierFees);
+    }
+
     function test_Admin_PauseBlocksMintBurnFlashAndBorrow() public {
         vm.startPrank(owner);
         IEdenAdminFacet(address(diamond)).setIndexFees(1, _u16Array(0, 0), _u16Array(0, 0), 500);
@@ -530,20 +586,21 @@ contract AdminFacetTest is Test {
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
         cuts = new IDiamondCut.FacetCut[](3);
 
-        bytes4[] memory adminSelectors = new bytes4[](13);
-        adminSelectors[0] = IEdenAdminFacet.setBasketMetadata.selector;
-        adminSelectors[1] = IEdenAdminFacet.setProtocolURI.selector;
-        adminSelectors[2] = IEdenAdminFacet.setContractVersion.selector;
-        adminSelectors[3] = IEdenAdminFacet.setFacetVersion.selector;
-        adminSelectors[4] = IEdenAdminFacet.setIndexFees.selector;
-        adminSelectors[5] = IEdenAdminFacet.setTreasuryFeeBps.selector;
-        adminSelectors[6] = IEdenAdminFacet.setFeePotShareBps.selector;
-        adminSelectors[7] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
-        adminSelectors[8] = IEdenAdminFacet.setBasketCreationFee.selector;
-        adminSelectors[9] = IEdenAdminFacet.setPaused.selector;
-        adminSelectors[10] = IEdenAdminFacet.setTreasury.selector;
-        adminSelectors[11] = IEdenAdminFacet.setTimelock.selector;
-        adminSelectors[12] = IEdenAdminFacet.freezeFacet.selector;
+        bytes4[] memory adminSelectors = new bytes4[](14);
+        adminSelectors[0] = IEdenAdminFacet.completeBootstrap.selector;
+        adminSelectors[1] = IEdenAdminFacet.setBasketMetadata.selector;
+        adminSelectors[2] = IEdenAdminFacet.setProtocolURI.selector;
+        adminSelectors[3] = IEdenAdminFacet.setContractVersion.selector;
+        adminSelectors[4] = IEdenAdminFacet.setFacetVersion.selector;
+        adminSelectors[5] = IEdenAdminFacet.setIndexFees.selector;
+        adminSelectors[6] = IEdenAdminFacet.setTreasuryFeeBps.selector;
+        adminSelectors[7] = IEdenAdminFacet.setFeePotShareBps.selector;
+        adminSelectors[8] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
+        adminSelectors[9] = IEdenAdminFacet.setBasketCreationFee.selector;
+        adminSelectors[10] = IEdenAdminFacet.setPaused.selector;
+        adminSelectors[11] = IEdenAdminFacet.setTreasury.selector;
+        adminSelectors[12] = IEdenAdminFacet.setTimelock.selector;
+        adminSelectors[13] = IEdenAdminFacet.freezeFacet.selector;
 
         bytes4[] memory flashSelectors = new bytes4[](11);
         flashSelectors[0] = IEdenCoreFacet.createBasket.selector;

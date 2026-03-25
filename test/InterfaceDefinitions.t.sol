@@ -13,6 +13,10 @@ import { IEdenStEVEFacet } from "src/interfaces/IEdenStEVEFacet.sol";
 contract InterfaceDefinitionsTest is Test {
     function test_NewFacetInterfaces_ExposeExpectedSelectors() public pure {
         assertEq(
+            IEdenAdminFacet.completeBootstrap.selector,
+            bytes4(keccak256("completeBootstrap()"))
+        );
+        assertEq(
             IEdenAdminFacet.setBasketMetadata.selector,
             bytes4(keccak256("setBasketMetadata(uint256,string,uint8)"))
         );

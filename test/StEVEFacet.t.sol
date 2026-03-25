@@ -180,6 +180,17 @@ contract StEVEHarnessFacet is EdenStEVEFacet {
 }
 
 contract StEVEFacetTest is Test {
+    event RewardConfigUpdated(
+        uint256 genesisTimestamp,
+        uint256 epochDuration,
+        uint256 halvingInterval,
+        uint256 maxPeriods,
+        uint256 baseRewardPerEpoch,
+        uint256 totalEpochs,
+        uint256 maxRewardOverride
+    );
+    event RewardOverrideUpdated(uint256 oldRate, uint256 newRate);
+
     uint256 internal constant DAY = 1 days;
     uint256 internal constant BASE_REWARD = 4_380_000e18;
 
@@ -476,6 +487,20 @@ contract StEVEFacetTest is Test {
         assertEq(IEdenStEVEFacet(address(diamond)).currentEmissionRate(), BASE_REWARD);
     }
 
+    function test_ConfigSetters_EmitRewardConfigAndOverrideEvents() public {
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit RewardConfigUpdated(block.timestamp, DAY, 183, 3, BASE_REWARD, 548, BASE_REWARD);
+        vm.prank(owner);
+        IEdenStEVEFacet(address(diamond)).configureRewards(
+            block.timestamp, DAY, 183, 3, BASE_REWARD, 548, BASE_REWARD
+        );
+
+        vm.expectEmit(false, false, false, true, address(diamond));
+        emit RewardOverrideUpdated(0, 100e18);
+        vm.prank(owner);
+        IEdenStEVEFacet(address(diamond)).setRewardPerEpoch(100e18);
+    }
+
     function _fundRewards(
         uint256 amount
     ) internal {
@@ -486,34 +511,35 @@ contract StEVEFacetTest is Test {
     }
 
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
-        bytes4[] memory selectors = new bytes4[](27);
+        bytes4[] memory selectors = new bytes4[](28);
         selectors[0] = IEdenStEVEFacet.claimRewards.selector;
-        selectors[1] = IEdenStEVEFacet.fundRewards.selector;
-        selectors[2] = IEdenStEVEFacet.setRewardPerEpoch.selector;
-        selectors[3] = IEdenStEVEFacet.rewardForEpoch.selector;
-        selectors[4] = IEdenStEVEFacet.currentEpoch.selector;
-        selectors[5] = IEdenStEVEFacet.rewardReserveBalance.selector;
-        selectors[6] = IEdenStEVEFacet.currentEmissionRate.selector;
-        selectors[7] = IEdenStEVEFacet.getUserTwab.selector;
-        selectors[8] = IEdenStEVEFacet.getRewardConfig.selector;
-        selectors[9] = IEdenStEVEFacet.claimableRewards.selector;
-        selectors[10] = IEdenStEVEFacet.previewClaimRewards.selector;
-        selectors[11] = IEdenStEVEFacet.claimableRewardsThroughEpoch.selector;
-        selectors[12] = IEdenStEVEFacet.getRewardEpochBreakdown.selector;
-        selectors[13] = IEdenStEVEFacet.onStEVETransfer.selector;
-        selectors[14] = StEVEHarnessFacet.onBasketTokenTransfer.selector;
-        selectors[15] = StEVEHarnessFacet.setStEveBasket.selector;
-        selectors[16] = StEVEHarnessFacet.setRewardConfig.selector;
-        selectors[17] = StEVEHarnessFacet.mintStEve.selector;
-        selectors[18] = StEVEHarnessFacet.burnStEve.selector;
-        selectors[19] = StEVEHarnessFacet.moveToLocked.selector;
-        selectors[20] = StEVEHarnessFacet.moveToLiquid.selector;
-        selectors[21] = StEVEHarnessFacet.burnLocked.selector;
-        selectors[22] = StEVEHarnessFacet.getLiquidBalance.selector;
-        selectors[23] = StEVEHarnessFacet.getLockedBalance.selector;
-        selectors[24] = StEVEHarnessFacet.getEffectiveBalance.selector;
-        selectors[25] = StEVEHarnessFacet.getUserTwabAccount.selector;
-        selectors[26] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
+        selectors[1] = IEdenStEVEFacet.configureRewards.selector;
+        selectors[2] = IEdenStEVEFacet.fundRewards.selector;
+        selectors[3] = IEdenStEVEFacet.setRewardPerEpoch.selector;
+        selectors[4] = IEdenStEVEFacet.rewardForEpoch.selector;
+        selectors[5] = IEdenStEVEFacet.currentEpoch.selector;
+        selectors[6] = IEdenStEVEFacet.rewardReserveBalance.selector;
+        selectors[7] = IEdenStEVEFacet.currentEmissionRate.selector;
+        selectors[8] = IEdenStEVEFacet.getUserTwab.selector;
+        selectors[9] = IEdenStEVEFacet.getRewardConfig.selector;
+        selectors[10] = IEdenStEVEFacet.claimableRewards.selector;
+        selectors[11] = IEdenStEVEFacet.previewClaimRewards.selector;
+        selectors[12] = IEdenStEVEFacet.claimableRewardsThroughEpoch.selector;
+        selectors[13] = IEdenStEVEFacet.getRewardEpochBreakdown.selector;
+        selectors[14] = IEdenStEVEFacet.onStEVETransfer.selector;
+        selectors[15] = StEVEHarnessFacet.onBasketTokenTransfer.selector;
+        selectors[16] = StEVEHarnessFacet.setStEveBasket.selector;
+        selectors[17] = StEVEHarnessFacet.setRewardConfig.selector;
+        selectors[18] = StEVEHarnessFacet.mintStEve.selector;
+        selectors[19] = StEVEHarnessFacet.burnStEve.selector;
+        selectors[20] = StEVEHarnessFacet.moveToLocked.selector;
+        selectors[21] = StEVEHarnessFacet.moveToLiquid.selector;
+        selectors[22] = StEVEHarnessFacet.burnLocked.selector;
+        selectors[23] = StEVEHarnessFacet.getLiquidBalance.selector;
+        selectors[24] = StEVEHarnessFacet.getLockedBalance.selector;
+        selectors[25] = StEVEHarnessFacet.getEffectiveBalance.selector;
+        selectors[26] = StEVEHarnessFacet.getUserTwabAccount.selector;
+        selectors[27] = StEVEHarnessFacet.getGlobalTwabAccount.selector;
 
         bytes4[] memory extras = new bytes4[](5);
         extras[0] = StEVEHarnessFacet.getUserCheckpointCount.selector;

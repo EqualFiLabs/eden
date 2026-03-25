@@ -9,6 +9,7 @@ import { IEdenBasketPositionHook } from "src/interfaces/IEdenBasketPositionHook.
 import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
+import { LibTokenDelta } from "src/libraries/LibTokenDelta.sol";
 import { LibUserBasketTracking } from "src/libraries/LibUserBasketTracking.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { StEVEToken } from "src/tokens/StEVEToken.sol";
@@ -115,21 +116,10 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet, IEdenBasketPositi
         if (basket.paused) revert BasketPaused(basketId);
 
         MintQuote memory quote = _previewMintQuote(basketId, units);
-        _collectMintInputs(quote);
+        uint256[] memory receivedAmounts = _collectMintInputs(quote);
 
         LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
-        uint256 len = quote.assets.length;
-        for (uint256 i = 0; i < len; i++) {
-            address asset = quote.assets[i];
-            store.vaultBalances[basketId][asset] += quote.baseDeposits[i];
-
-            if (quote.potBuyIns[i] > 0) {
-                store.feePots[basketId][asset] += quote.potBuyIns[i];
-                emit FeePotAccrued(basketId, asset, quote.potBuyIns[i], FEE_POT_BUY_IN_SOURCE);
-            }
-
-            _distributeFee(basketId, asset, quote.feeAmounts[i], MINT_FEE_SOURCE);
-        }
+        _settleMintQuote(store, basketId, quote, receivedAmounts);
 
         basket.totalUnits += units;
         BasketToken(basket.token).mintIndexUnits(to, units);
@@ -197,6 +187,8 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet, IEdenBasketPositi
         basketExists(basketId)
         returns (address[] memory assets, uint256[] memory required, uint256[] memory feeAmounts)
     {
+        // Fee-on-transfer assets can reduce runtime receipts; exact-out execution reverts if
+        // the observed token delta is insufficient for this quote.
         MintQuote memory quote = _previewMintQuote(basketId, units);
         return (quote.assets, quote.totalRequired, quote.feeAmounts);
     }
@@ -300,8 +292,9 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet, IEdenBasketPositi
 
     function _collectMintInputs(
         MintQuote memory quote
-    ) internal {
+    ) internal returns (uint256[] memory receivedAmounts) {
         uint256 len = quote.assets.length;
+        receivedAmounts = new uint256[](len);
         for (uint256 i = 0; i < len; i++) {
             if (_isNative(quote.assets[i])) {
                 revert NativeAssetUnsupported();
@@ -310,8 +303,29 @@ contract EdenCoreFacet is EdenReentrancyGuard, IEdenCoreFacet, IEdenBasketPositi
 
         for (uint256 i = 0; i < len; i++) {
             if (_isNative(quote.assets[i])) continue;
-            IERC20(quote.assets[i])
-                .safeTransferFrom(msg.sender, address(this), quote.totalRequired[i]);
+            receivedAmounts[i] =
+                LibTokenDelta.pullTokenAtLeast(quote.assets[i], msg.sender, quote.totalRequired[i]);
+        }
+    }
+
+    function _settleMintQuote(
+        LibEdenStorage.EdenStorage storage store,
+        uint256 basketId,
+        MintQuote memory quote,
+        uint256[] memory receivedAmounts
+    ) internal {
+        uint256 len = quote.assets.length;
+        for (uint256 i = 0; i < len; i++) {
+            address asset = quote.assets[i];
+            uint256 surplus = receivedAmounts[i] - quote.totalRequired[i];
+            store.vaultBalances[basketId][asset] += quote.baseDeposits[i] + surplus;
+
+            if (quote.potBuyIns[i] > 0) {
+                store.feePots[basketId][asset] += quote.potBuyIns[i];
+                emit FeePotAccrued(basketId, asset, quote.potBuyIns[i], FEE_POT_BUY_IN_SOURCE);
+            }
+
+            _distributeFee(basketId, asset, quote.feeAmounts[i], MINT_FEE_SOURCE);
         }
     }
 

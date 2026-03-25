@@ -9,6 +9,7 @@ import { IEdenStEVEFacet } from "src/interfaces/IEdenStEVEFacet.sol";
 import { EdenReentrancyGuard } from "src/facets/EdenReentrancyGuard.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibStEVEStorage } from "src/libraries/LibStEVEStorage.sol";
+import { LibTokenDelta } from "src/libraries/LibTokenDelta.sol";
 
 contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
     using SafeERC20 for IERC20;
@@ -67,16 +68,26 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
         if (st.rewardPerEpochOverride > maxRewardPerEpochOverride) {
             st.rewardPerEpochOverride = maxRewardPerEpochOverride;
         }
+
+        emit RewardConfigUpdated(
+            genesisTimestamp,
+            epochDuration,
+            halvingInterval,
+            maxPeriods,
+            baseRewardPerEpoch,
+            totalEpochs,
+            maxRewardPerEpochOverride
+        );
     }
 
     function fundRewards(
         uint256 amount
     ) external onlyOwnerOrTimelock {
-        IERC20(_rewardToken()).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = LibTokenDelta.pullTokenAtLeast(_rewardToken(), msg.sender, amount);
 
         LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
-        st.rewardReserve += amount;
-        emit RewardsFunded(amount, st.rewardReserve);
+        st.rewardReserve += received;
+        emit RewardsFunded(received, st.rewardReserve);
     }
 
     function setRewardPerEpoch(
@@ -95,6 +106,7 @@ contract EdenStEVEFacet is EdenReentrancyGuard, IEdenStEVEFacet {
         uint256 oldRate = st.rewardPerEpochOverride;
         st.rewardPerEpochOverride = newRate;
         emit RewardRateUpdated(oldRate, newRate);
+        emit RewardOverrideUpdated(oldRate, newRate);
     }
 
     function rewardForEpoch(

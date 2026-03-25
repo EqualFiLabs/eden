@@ -7,6 +7,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEdenLendingFacet } from "src/interfaces/IEdenLendingFacet.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
+import { LibTokenDelta } from "src/libraries/LibTokenDelta.sol";
 import { LibUserBasketTracking } from "src/libraries/LibUserBasketTracking.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { EdenStEVEFacet } from "src/facets/EdenStEVEFacet.sol";
@@ -112,8 +113,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
         for (uint256 i = 0; i < len; i++) {
             address asset = assets[i];
             uint256 principal = principals[i];
-            IERC20(asset).safeTransferFrom(msg.sender, address(this), principal);
-            store.vaultBalances[loan.basketId][asset] += principal;
+            uint256 received = LibTokenDelta.pullTokenAtLeast(asset, msg.sender, principal);
+            store.vaultBalances[loan.basketId][asset] += received;
             lending.outstandingPrincipal[loan.basketId][asset] -= principal;
         }
 
@@ -193,6 +194,9 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
 
         LibLendingStorage.layout().lendingConfigs[basketId] =
             LibLendingStorage.LendingConfig({ minDuration: minDuration, maxDuration: maxDuration });
+        emit LendingConfigUpdated(
+            basketId, minDuration, maxDuration, LibLendingStorage.DEFAULT_LTV_BPS
+        );
     }
 
     function configureBorrowFeeTiers(
@@ -223,6 +227,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
             );
             previousMin = currentMin;
         }
+
+        emit BorrowFeeTiersUpdated(basketId, minCollateralUnits, flatFeeNative);
     }
 
     function loanCount() external view returns (uint256) {
@@ -401,6 +407,8 @@ contract EdenLendingFacet is EdenStEVEFacet, IEdenLendingFacet {
     function previewRepay(
         uint256 loanId
     ) external view returns (RepayPreview memory preview) {
+        // Fee-on-transfer assets can reduce runtime receipts; exact-out repayment reverts if the
+        // observed token delta is insufficient to satisfy the previewed principals.
         LibLendingStorage.LendingStorage storage lending = LibLendingStorage.layout();
         LibLendingStorage.Loan storage loan = lending.loans[loanId];
         if (loan.borrower == address(0) || lending.loanClosed[loanId]) revert LoanNotFound(loanId);

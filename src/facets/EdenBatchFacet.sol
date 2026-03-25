@@ -9,6 +9,7 @@ import { IEdenBatchFacet } from "src/interfaces/IEdenBatchFacet.sol";
 import { LibEdenStorage } from "src/libraries/LibEdenStorage.sol";
 import { LibLendingStorage } from "src/libraries/LibLendingStorage.sol";
 import { LibStEVEStorage } from "src/libraries/LibStEVEStorage.sol";
+import { LibTokenDelta } from "src/libraries/LibTokenDelta.sol";
 import { LibUserBasketTracking } from "src/libraries/LibUserBasketTracking.sol";
 import { BasketToken } from "src/tokens/BasketToken.sol";
 import { EdenLendingFacet } from "src/facets/EdenLendingFacet.sol";
@@ -156,11 +157,11 @@ contract EdenBatchFacet is EdenLendingFacet {
     ) external nonReentrant onlyOwnerOrTimelock {
         _usePermit(permit, msg.sender);
 
-        IERC20(_rewardToken()).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = LibTokenDelta.pullTokenAtLeast(_rewardToken(), msg.sender, amount);
 
         LibStEVEStorage.StEVEStorage storage st = LibStEVEStorage.layout();
-        st.rewardReserve += amount;
-        emit RewardsFunded(amount, st.rewardReserve);
+        st.rewardReserve += received;
+        emit RewardsFunded(received, st.rewardReserve);
     }
 
     function _quoteSingleAssetMintFromInput(
@@ -259,20 +260,9 @@ contract EdenBatchFacet is EdenLendingFacet {
         if (basket.paused) revert BasketPaused(basketId);
 
         BatchMintQuote memory quote = _previewBatchMintQuote(basketId, units);
-        _collectBatchMintInputs(quote, payer);
+        uint256[] memory receivedAmounts = _collectBatchMintInputs(quote, payer);
 
-        uint256 len = quote.assets.length;
-        for (uint256 i = 0; i < len; i++) {
-            address asset = quote.assets[i];
-            store.vaultBalances[basketId][asset] += quote.baseDeposits[i];
-
-            if (quote.potBuyIns[i] > 0) {
-                store.feePots[basketId][asset] += quote.potBuyIns[i];
-                emit FeePotAccrued(basketId, asset, quote.potBuyIns[i], FEE_POT_BUY_IN_SOURCE);
-            }
-
-            _distributeBatchFee(basketId, asset, quote.feeAmounts[i], MINT_FEE_SOURCE);
-        }
+        _settleBatchMintQuote(store, basketId, quote, receivedAmounts);
 
         basket.totalUnits += units;
         BasketToken(basket.token).mintIndexUnits(to, units);
@@ -300,8 +290,8 @@ contract EdenBatchFacet is EdenLendingFacet {
         for (uint256 i = 0; i < len; i++) {
             address asset = assets[i];
             uint256 principal = principals[i];
-            IERC20(asset).safeTransferFrom(borrower, address(this), principal);
-            store.vaultBalances[loan.basketId][asset] += principal;
+            uint256 received = LibTokenDelta.pullTokenAtLeast(asset, borrower, principal);
+            store.vaultBalances[loan.basketId][asset] += received;
             lending.outstandingPrincipal[loan.basketId][asset] -= principal;
         }
 
@@ -367,8 +357,9 @@ contract EdenBatchFacet is EdenLendingFacet {
     function _collectBatchMintInputs(
         BatchMintQuote memory quote,
         address payer
-    ) internal {
+    ) internal returns (uint256[] memory receivedAmounts) {
         uint256 len = quote.assets.length;
+        receivedAmounts = new uint256[](len);
         for (uint256 i = 0; i < len; i++) {
             if (quote.assets[i] == address(0)) {
                 revert NativeAssetUnsupported();
@@ -376,7 +367,29 @@ contract EdenBatchFacet is EdenLendingFacet {
         }
 
         for (uint256 i = 0; i < len; i++) {
-            IERC20(quote.assets[i]).safeTransferFrom(payer, address(this), quote.totalRequired[i]);
+            receivedAmounts[i] =
+                LibTokenDelta.pullTokenAtLeast(quote.assets[i], payer, quote.totalRequired[i]);
+        }
+    }
+
+    function _settleBatchMintQuote(
+        LibEdenStorage.EdenStorage storage store,
+        uint256 basketId,
+        BatchMintQuote memory quote,
+        uint256[] memory receivedAmounts
+    ) internal {
+        uint256 len = quote.assets.length;
+        for (uint256 i = 0; i < len; i++) {
+            address asset = quote.assets[i];
+            uint256 surplus = receivedAmounts[i] - quote.totalRequired[i];
+            store.vaultBalances[basketId][asset] += quote.baseDeposits[i] + surplus;
+
+            if (quote.potBuyIns[i] > 0) {
+                store.feePots[basketId][asset] += quote.potBuyIns[i];
+                emit FeePotAccrued(basketId, asset, quote.potBuyIns[i], FEE_POT_BUY_IN_SOURCE);
+            }
+
+            _distributeBatchFee(basketId, asset, quote.feeAmounts[i], MINT_FEE_SOURCE);
         }
     }
 

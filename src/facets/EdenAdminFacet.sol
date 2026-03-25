@@ -9,6 +9,7 @@ contract EdenAdminFacet is IEdenAdminFacet {
     error UnknownBasket(uint256 basketId);
     error InvalidArrayLength();
     error FeeCapExceeded();
+    error ZeroAddress();
 
     modifier onlyOwnerOrTimelock() {
         LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
@@ -26,6 +27,12 @@ contract EdenAdminFacet is IEdenAdminFacet {
     ) {
         if (basketId >= LibEdenStorage.layout().basketCount) revert UnknownBasket(basketId);
         _;
+    }
+
+    function completeBootstrap() external onlyOwnerOrTimelock {
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        if (store.timelock == address(0)) revert ZeroAddress();
+        store.owner = store.timelock;
     }
 
     function setIndexFees(
@@ -46,6 +53,7 @@ contract EdenAdminFacet is IEdenAdminFacet {
         basket.mintFeeBps = mintFeeBps;
         basket.burnFeeBps = burnFeeBps;
         basket.flashFeeBps = flashFeeBps;
+        emit BasketFeeConfigUpdated(basketId, mintFeeBps, burnFeeBps, flashFeeBps);
     }
 
     function setBasketMetadata(
@@ -116,7 +124,10 @@ contract EdenAdminFacet is IEdenAdminFacet {
     function setBasketCreationFee(
         uint256 fee
     ) external onlyOwnerOrTimelock {
-        LibEdenStorage.layout().basketCreationFee = fee;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        uint256 oldFee = store.basketCreationFee;
+        store.basketCreationFee = fee;
+        emit BasketCreationFeeUpdated(oldFee, fee);
     }
 
     function setPaused(
@@ -124,18 +135,25 @@ contract EdenAdminFacet is IEdenAdminFacet {
         bool paused
     ) external onlyOwnerOrTimelock basketExists(basketId) {
         LibEdenStorage.layout().baskets[basketId].paused = paused;
+        emit BasketPausedUpdated(basketId, paused);
     }
 
     function setTreasury(
         address treasury
     ) external onlyOwnerOrTimelock {
-        LibEdenStorage.layout().treasury = treasury;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        address oldTreasury = store.treasury;
+        store.treasury = treasury;
+        emit TreasuryUpdated(oldTreasury, treasury);
     }
 
     function setTimelock(
         address timelock
     ) external onlyOwnerOrTimelock {
-        LibEdenStorage.layout().timelock = timelock;
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        address oldTimelock = store.timelock;
+        store.timelock = timelock;
+        emit TimelockUpdated(oldTimelock, timelock);
     }
 
     function freezeFacet(

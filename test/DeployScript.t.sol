@@ -36,6 +36,10 @@ contract DeployScriptTest is Test {
         DeployEden.Deployment memory deployment = deployer.run();
 
         assertEq(IDiamondLoupe(address(deployment.diamond)).facetAddresses().length, 7);
+        assertTrue(address(deployment.timelockController) != address(0));
+        assertEq(address(deployment.timelockController), deployment.diamond.timelock());
+        assertEq(deployment.diamond.owner(), address(deployment.timelockController));
+        assertEq(deployment.timelockController.getMinDelay(), 7 days);
         assertEq(IEdenStEVEFacet(address(deployment.diamond)).rewardReserveBalance(), 2_000_000_000e18);
         assertEq(IEdenStEVEFacet(address(deployment.diamond)).currentEpoch(), 0);
 
