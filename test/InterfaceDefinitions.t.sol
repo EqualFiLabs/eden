@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { IEdenAdminFacet } from "src/interfaces/IEdenAdminFacet.sol";
 import { IEdenAgentFacet } from "src/interfaces/IEdenAgentFacet.sol";
 import { IEdenBatchFacet } from "src/interfaces/IEdenBatchFacet.sol";
 import { IEdenLendingFacet } from "src/interfaces/IEdenLendingFacet.sol";
@@ -11,6 +12,22 @@ import { IEdenStEVEFacet } from "src/interfaces/IEdenStEVEFacet.sol";
 
 contract InterfaceDefinitionsTest is Test {
     function test_NewFacetInterfaces_ExposeExpectedSelectors() public pure {
+        assertEq(
+            IEdenAdminFacet.setBasketMetadata.selector,
+            bytes4(keccak256("setBasketMetadata(uint256,string,uint8)"))
+        );
+        assertEq(
+            IEdenAdminFacet.setProtocolURI.selector,
+            bytes4(keccak256("setProtocolURI(string)"))
+        );
+        assertEq(
+            IEdenAdminFacet.setContractVersion.selector,
+            bytes4(keccak256("setContractVersion(string)"))
+        );
+        assertEq(
+            IEdenAdminFacet.setFacetVersion.selector,
+            bytes4(keccak256("setFacetVersion(address,string)"))
+        );
         assertEq(IEdenMetadataFacet.basketCount.selector, bytes4(keccak256("basketCount()")));
         assertEq(
             IEdenMetadataFacet.getBasketSummariesPaginated.selector,

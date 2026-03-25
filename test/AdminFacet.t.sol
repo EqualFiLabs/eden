@@ -78,6 +78,47 @@ contract FlashOpsHarnessFacet is EdenFlashFacet {
         );
     }
 
+    function getBasketMetadata(
+        uint256 basketId
+    )
+        external
+        view
+        returns (
+            string memory name,
+            string memory symbol,
+            string memory uri,
+            address creator,
+            uint64 createdAt,
+            uint8 basketType
+        )
+    {
+        LibEdenStorage.BasketMetadata storage metadata =
+            LibEdenStorage.layout().basketMetadata[basketId];
+        return (
+            metadata.name,
+            metadata.symbol,
+            metadata.uri,
+            metadata.creator,
+            metadata.createdAt,
+            metadata.basketType
+        );
+    }
+
+    function getProtocolMetadata()
+        external
+        view
+        returns (string memory protocolURI, string memory contractVersion)
+    {
+        LibEdenStorage.EdenStorage storage store = LibEdenStorage.layout();
+        return (store.protocolURI, store.contractVersion);
+    }
+
+    function getFacetVersion(
+        address facet
+    ) external view returns (string memory) {
+        return LibEdenStorage.layout().facetVersions[facet];
+    }
+
     function getLoan(
         uint256 loanId
     ) external view returns (LibLendingStorage.Loan memory) {
@@ -240,6 +281,65 @@ contract AdminFacetTest is Test {
         vm.stopPrank();
     }
 
+    function test_Admin_MetadataVersionSetters_AreTimelockOnlyAndReflectStorage() public {
+        (,,, address creatorBefore, uint64 createdAtBefore,) =
+            FlashOpsHarnessFacet(address(diamond)).getBasketMetadata(1);
+        assertEq(creatorBefore, owner);
+        assertGt(createdAtBefore, 0);
+
+        vm.prank(owner);
+        vm.expectRevert(EdenAdminFacet.Unauthorized.selector);
+        IEdenAdminFacet(address(diamond)).setBasketMetadata(1, "ipfs://owner-write", 9);
+
+        vm.prank(owner);
+        vm.expectRevert(EdenAdminFacet.Unauthorized.selector);
+        IEdenAdminFacet(address(diamond)).setProtocolURI("ipfs://protocol");
+
+        vm.prank(owner);
+        vm.expectRevert(EdenAdminFacet.Unauthorized.selector);
+        IEdenAdminFacet(address(diamond)).setContractVersion("2.0.0");
+
+        vm.prank(owner);
+        vm.expectRevert(EdenAdminFacet.Unauthorized.selector);
+        IEdenAdminFacet(address(diamond)).setFacetVersion(address(adminFacet), "admin-v2");
+
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setBasketMetadata(1, "ipfs://basket-one", 7);
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setProtocolURI("ipfs://protocol");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setContractVersion("2.0.0");
+        vm.prank(timelock);
+        IEdenAdminFacet(address(diamond)).setFacetVersion(address(adminFacet), "admin-v2");
+
+        (
+            string memory name,
+            string memory symbol,
+            string memory uri,
+            address creator,
+            uint64 createdAt,
+            uint8 basketType
+        ) = FlashOpsHarnessFacet(address(diamond)).getBasketMetadata(1);
+        (string memory protocolURI, string memory contractVersion) =
+            FlashOpsHarnessFacet(address(diamond)).getProtocolMetadata();
+        string memory facetVersion =
+            FlashOpsHarnessFacet(address(diamond)).getFacetVersion(address(adminFacet));
+
+        assertEq(name, "Basket");
+        assertEq(symbol, "BASK");
+        assertEq(uri, "ipfs://basket-one");
+        assertEq(creator, owner);
+        assertEq(createdAt, createdAtBefore);
+        assertEq(basketType, 7);
+        assertEq(protocolURI, "ipfs://protocol");
+        assertEq(contractVersion, "2.0.0");
+        assertEq(facetVersion, "admin-v2");
+
+        vm.prank(timelock);
+        vm.expectRevert(abi.encodeWithSelector(EdenAdminFacet.UnknownBasket.selector, uint256(999)));
+        IEdenAdminFacet(address(diamond)).setBasketMetadata(999, "ipfs://missing", 1);
+    }
+
     function test_Admin_PauseBlocksMintBurnFlashAndBorrow() public {
         vm.startPrank(owner);
         IEdenAdminFacet(address(diamond)).setIndexFees(1, _u16Array(0, 0), _u16Array(0, 0), 500);
@@ -389,17 +489,22 @@ contract AdminFacetTest is Test {
     function _facetCuts() internal view returns (IDiamondCut.FacetCut[] memory cuts) {
         cuts = new IDiamondCut.FacetCut[](3);
 
-        bytes4[] memory adminSelectors = new bytes4[](8);
-        adminSelectors[0] = IEdenAdminFacet.setIndexFees.selector;
-        adminSelectors[1] = IEdenAdminFacet.setTreasuryFeeBps.selector;
-        adminSelectors[2] = IEdenAdminFacet.setFeePotShareBps.selector;
-        adminSelectors[3] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
-        adminSelectors[4] = IEdenAdminFacet.setBasketCreationFee.selector;
-        adminSelectors[5] = IEdenAdminFacet.setPaused.selector;
-        adminSelectors[6] = IEdenAdminFacet.setTreasury.selector;
-        adminSelectors[7] = IEdenAdminFacet.setTimelock.selector;
+        bytes4[] memory adminSelectors = new bytes4[](13);
+        adminSelectors[0] = IEdenAdminFacet.setBasketMetadata.selector;
+        adminSelectors[1] = IEdenAdminFacet.setProtocolURI.selector;
+        adminSelectors[2] = IEdenAdminFacet.setContractVersion.selector;
+        adminSelectors[3] = IEdenAdminFacet.setFacetVersion.selector;
+        adminSelectors[4] = IEdenAdminFacet.setIndexFees.selector;
+        adminSelectors[5] = IEdenAdminFacet.setTreasuryFeeBps.selector;
+        adminSelectors[6] = IEdenAdminFacet.setFeePotShareBps.selector;
+        adminSelectors[7] = IEdenAdminFacet.setProtocolFeeSplitBps.selector;
+        adminSelectors[8] = IEdenAdminFacet.setBasketCreationFee.selector;
+        adminSelectors[9] = IEdenAdminFacet.setPaused.selector;
+        adminSelectors[10] = IEdenAdminFacet.setTreasury.selector;
+        adminSelectors[11] = IEdenAdminFacet.setTimelock.selector;
+        adminSelectors[12] = IEdenAdminFacet.freezeFacet.selector;
 
-        bytes4[] memory flashSelectors = new bytes4[](8);
+        bytes4[] memory flashSelectors = new bytes4[](11);
         flashSelectors[0] = IEdenCoreFacet.createBasket.selector;
         flashSelectors[1] = IEdenCoreFacet.mint.selector;
         flashSelectors[2] = IEdenCoreFacet.burn.selector;
@@ -408,6 +513,9 @@ contract AdminFacetTest is Test {
         flashSelectors[5] = FlashOpsHarnessFacet.getBasketConfig.selector;
         flashSelectors[6] = FlashOpsHarnessFacet.getProtocolConfig.selector;
         flashSelectors[7] = FlashOpsHarnessFacet.getLoan.selector;
+        flashSelectors[8] = FlashOpsHarnessFacet.getBasketMetadata.selector;
+        flashSelectors[9] = FlashOpsHarnessFacet.getProtocolMetadata.selector;
+        flashSelectors[10] = FlashOpsHarnessFacet.getFacetVersion.selector;
 
         bytes4[] memory lendingSelectors = new bytes4[](6);
         lendingSelectors[0] = IEdenLendingFacet.borrow.selector;

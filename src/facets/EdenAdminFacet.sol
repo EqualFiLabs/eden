@@ -16,6 +16,11 @@ contract EdenAdminFacet is IEdenAdminFacet {
         _;
     }
 
+    modifier onlyTimelock() {
+        if (msg.sender != LibEdenStorage.layout().timelock) revert Unauthorized();
+        _;
+    }
+
     modifier basketExists(
         uint256 basketId
     ) {
@@ -41,6 +46,36 @@ contract EdenAdminFacet is IEdenAdminFacet {
         basket.mintFeeBps = mintFeeBps;
         basket.burnFeeBps = burnFeeBps;
         basket.flashFeeBps = flashFeeBps;
+    }
+
+    function setBasketMetadata(
+        uint256 basketId,
+        string calldata uri,
+        uint8 basketType
+    ) external onlyTimelock basketExists(basketId) {
+        LibEdenStorage.BasketMetadata storage metadata =
+            LibEdenStorage.layout().basketMetadata[basketId];
+        metadata.uri = uri;
+        metadata.basketType = basketType;
+    }
+
+    function setProtocolURI(
+        string calldata uri
+    ) external onlyTimelock {
+        LibEdenStorage.layout().protocolURI = uri;
+    }
+
+    function setContractVersion(
+        string calldata version
+    ) external onlyTimelock {
+        LibEdenStorage.layout().contractVersion = version;
+    }
+
+    function setFacetVersion(
+        address facet,
+        string calldata version
+    ) external onlyTimelock {
+        LibEdenStorage.layout().facetVersions[facet] = version;
     }
 
     function setTreasuryFeeBps(

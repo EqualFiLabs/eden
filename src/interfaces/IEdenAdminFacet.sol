@@ -4,6 +4,22 @@ pragma solidity ^0.8.20;
 import { IEdenEvents } from "./IEdenEvents.sol";
 
 interface IEdenAdminFacet is IEdenEvents {
+    function setBasketMetadata(
+        uint256 basketId,
+        string calldata uri,
+        uint8 basketType
+    ) external;
+    function setProtocolURI(
+        string calldata uri
+    ) external;
+    function setContractVersion(
+        string calldata version
+    ) external;
+    function setFacetVersion(
+        address facet,
+        string calldata version
+    ) external;
+
     function setIndexFees(
         uint256 basketId,
         uint16[] calldata mintFeeBps,
